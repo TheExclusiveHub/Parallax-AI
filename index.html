@@ -484,10 +484,23 @@
             z-index: 1001;
             display: none;
         }
+
+        .debug-info {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 1000;
+        }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
+    <div class="debug-info" id="debugInfo">Статус: Загрузка...</div>
     <div class="notification" id="notification">Новое сообщение!</div>
 
     <div class="admin-controls" id="adminControls">
@@ -571,8 +584,16 @@
         };
 
         // Инициализация Firebase
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
+        let database;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+            console.log('Firebase инициализирован успешно');
+            updateDebugInfo('Firebase: OK');
+        } catch (error) {
+            console.error('Ошибка инициализации Firebase:', error);
+            updateDebugInfo('Firebase: ERROR');
+        }
 
         // Переменные состояния
         let isAIEnabled = false;
@@ -580,8 +601,6 @@
         let isChatActive = false;
         let currentSessionId = null;
         let isAdmin = false;
-        let messageListener = null;
-        let sessionsListener = null;
 
         // Элементы DOM
         const chatContainer = document.getElementById('chatContainer');
@@ -600,10 +619,11 @@
         const chatInterface = document.getElementById('chatInterface');
         const adminControls = document.getElementById('adminControls');
         const notification = document.getElementById('notification');
+        const debugInfo = document.getElementById('debugInfo');
 
-        // Генерация ID сессии
-        function generateSessionId() {
-            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        // Обновление отладочной информации
+        function updateDebugInfo(message) {
+            debugInfo.textContent = message;
         }
 
         // Показать уведомление
@@ -615,85 +635,94 @@
             }, 3000);
         }
 
+        // Генерация ID сессии
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
         // Проверка IP-адреса для отображения админ-панели
         function checkIP() {
-            // Для демонстрации используем фиктивный IP
-            const userIP = "171.33.254.90"; // Замените на реальный IP пользователя
+            // Для тестирования - всегда показываем админ-панель
+            isAdmin = true;
+            adminControls.style.display = 'flex';
+            loadActiveSessions();
+            updateDebugInfo('Режим: Админ');
             
+            // Для обычного пользователя раскомментируйте:
+            /*
+            const userIP = "171.33.254.90";
             if (userIP === "171.33.254.90") {
                 isAdmin = true;
                 adminControls.style.display = 'flex';
                 loadActiveSessions();
-                console.log('Режим администратора активирован');
+                updateDebugInfo('Режим: Админ');
             } else {
-                // Обычный пользователь
                 currentSessionId = generateSessionId();
                 startUserSession();
-                console.log('Режим пользователя, сессия:', currentSessionId);
+                updateDebugInfo('Режим: Пользователь');
             }
+            */
         }
 
         // Начало сессии пользователя
         function startUserSession() {
+            if (!database) {
+                console.error('Firebase не инициализирован');
+                return;
+            }
+
             const sessionData = {
                 createdAt: Date.now(),
                 lastActivity: Date.now(),
                 status: 'active',
-                userAgent: navigator.userAgent,
-                ip: "user_ip_here" // В реальном приложении нужно получать IP
+                userAgent: navigator.userAgent
             };
             
             // Сохраняем сессию в Firebase
             database.ref('sessions/' + currentSessionId).set(sessionData)
                 .then(() => {
                     console.log('Сессия создана:', currentSessionId);
+                    updateDebugInfo('Сессия создана');
                 })
                 .catch((error) => {
                     console.error('Ошибка создания сессии:', error);
+                    updateDebugInfo('Ошибка сессии');
                 });
             
             // Слушаем сообщения для этой сессии
             setupMessageListener(currentSessionId);
-            
-            // Обновляем активность каждые 30 секунд
-            setInterval(() => {
-                database.ref('sessions/' + currentSessionId).update({
-                    lastActivity: Date.now()
-                });
-            }, 30000);
         }
 
         // Настройка слушателя сообщений
         function setupMessageListener(sessionId) {
-            if (messageListener) {
-                database.ref('messages/' + currentSessionId).off('child_added', messageListener);
-            }
-            
-            messageListener = (snapshot) => {
-                const message = snapshot.val();
-                console.log('Получено сообщение:', message);
-                
-                // Проверяем, не наше ли это сообщение
-                if (message.sender === 'user' && isAdmin) return;
-                
-                if (!isMessageDisplayed(message.id || message.timestamp)) {
-                    displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
+            if (!database) return;
+
+            try {
+                database.ref('messages/' + sessionId).on('child_added', (snapshot) => {
+                    const message = snapshot.val();
+                    console.log('Получено сообщение:', message);
                     
-                    // Показываем уведомление для админа о новом сообщении
-                    if (isAdmin && message.sender === 'user') {
-                        showNotification('Новое сообщение от пользователя!');
+                    if (message && !isMessageDisplayed(message.timestamp)) {
+                        displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
+                        
+                        if (isAdmin && message.sender === 'user') {
+                            showNotification('Новое сообщение от пользователя!');
+                        }
                     }
-                }
-            };
-            
-            database.ref('messages/' + sessionId).on('child_added', messageListener);
+                });
+                updateDebugInfo('Слушатель сообщений активен');
+            } catch (error) {
+                console.error('Ошибка настройки слушателя:', error);
+                updateDebugInfo('Ошибка слушателя');
+            }
         }
 
         // Проверка, отображено ли сообщение уже
-        function isMessageDisplayed(messageId) {
+        function isMessageDisplayed(timestamp) {
             const messages = chatContainer.querySelectorAll('.message');
             for (let msg of messages) {
-                if (msg.getAttribute('data-message-id') === messageId) {
+                const timeElement = msg.querySelector('.message-time');
+                if (timeElement && timeElement.textContent === new Date(timestamp).toLocaleTimeString()) {
                     return true;
                 }
             }
@@ -702,51 +731,54 @@
 
         // Загрузка активных сессий для админа
         function loadActiveSessions() {
-            if (sessionsListener) {
-                database.ref('sessions').off('value', sessionsListener);
-            }
-            
-            sessionsListener = (snapshot) => {
-                const sessions = snapshot.val();
-                userList.innerHTML = '';
-                console.log('Загружены сессии:', sessions);
-                
-                if (sessions) {
-                    Object.keys(sessions).forEach(sessionId => {
-                        const session = sessions[sessionId];
-                        const isActive = (Date.now() - session.lastActivity) < 120000; // 2 минуты
-                        
-                        const userItem = document.createElement('div');
-                        userItem.classList.add('user-item');
-                        
-                        const statusClass = isActive ? 'status-online' : 'status-offline';
-                        const statusText = isActive ? 'Online' : 'Offline';
-                        
-                        userItem.innerHTML = `
-                            <span class="status-indicator ${statusClass}"></span>
-                            Сессия: ${sessionId.substr(0, 8)}... (${statusText})
-                            <br><small>Создана: ${new Date(session.createdAt).toLocaleTimeString()}</small>
-                        `;
-                        
-                        userItem.setAttribute('data-session', sessionId);
-                        
-                        userItem.addEventListener('click', function() {
-                            document.querySelectorAll('.user-item').forEach(item => {
-                                item.classList.remove('selected');
+            if (!database) return;
+
+            try {
+                database.ref('sessions').on('value', (snapshot) => {
+                    const sessions = snapshot.val();
+                    userList.innerHTML = '';
+                    
+                    if (sessions) {
+                        Object.keys(sessions).forEach(sessionId => {
+                            const session = sessions[sessionId];
+                            const isActive = (Date.now() - session.lastActivity) < 300000; // 5 минут
+                            
+                            const userItem = document.createElement('div');
+                            userItem.classList.add('user-item');
+                            
+                            const statusClass = isActive ? 'status-online' : 'status-offline';
+                            const statusText = isActive ? 'Online' : 'Offline';
+                            
+                            userItem.innerHTML = `
+                                <span class="status-indicator ${statusClass}"></span>
+                                ${sessionId.substr(0, 12)}... (${statusText})
+                                <br><small>${new Date(session.createdAt).toLocaleString()}</small>
+                            `;
+                            
+                            userItem.setAttribute('data-session', sessionId);
+                            
+                            userItem.addEventListener('click', function() {
+                                document.querySelectorAll('.user-item').forEach(item => {
+                                    item.classList.remove('selected');
+                                });
+                                this.classList.add('selected');
+                                currentSessionId = sessionId;
+                                console.log('Выбрана сессия:', currentSessionId);
+                                updateDebugInfo('Сессия выбрана: ' + sessionId.substr(0, 8));
                             });
-                            this.classList.add('selected');
-                            currentSessionId = this.getAttribute('data-session');
-                            console.log('Выбрана сессия:', currentSessionId);
+                            
+                            userList.appendChild(userItem);
                         });
-                        
-                        userList.appendChild(userItem);
-                    });
-                } else {
-                    userList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Нет активных сессий</div>';
-                }
-            };
-            
-            database.ref('sessions').on('value', sessionsListener);
+                        updateDebugInfo('Сессии загружены: ' + Object.keys(sessions).length);
+                    } else {
+                        userList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Нет активных сессий</div>';
+                        updateDebugInfo('Нет активных сессий');
+                    }
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки сессий:', error);
+                updateDebugInfo('Ошибка загрузки сессий');
+            }
         }
 
         // Отправка сообщения
@@ -754,14 +786,18 @@
             const messageText = messageInput.value.trim();
             if (messageText === '') return;
 
+            if (!database) {
+                console.error('Firebase не доступен');
+                showNotification('Ошибка: Firebase не доступен');
+                return;
+            }
+
             // Если это первое сообщение, активируем чат
             if (!isChatActive) {
                 activateChat();
             }
 
-            const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const messageData = {
-                id: messageId,
                 text: messageText,
                 sender: 'user',
                 timestamp: Date.now(),
@@ -770,112 +806,106 @@
 
             console.log('Отправка сообщения:', messageData);
 
-            // Сохраняем сообщение в Firebase
-            if (isAdmin && currentSessionId) {
-                // Админ отправляет сообщение от имени ИИ
+            // Определяем куда отправлять сообщение
+            let targetSessionId = currentSessionId;
+            
+            if (isAdmin) {
+                // Админ отправляет сообщение в выбранную сессию
+                if (!targetSessionId) {
+                    showNotification('Выберите сессию пользователя!');
+                    return;
+                }
                 messageData.sender = 'ai';
                 messageData.isAdmin = true;
-                database.ref('messages/' + currentSessionId).push(messageData)
-                    .then(() => {
-                        console.log('Сообщение админа отправлено');
-                        displayMessage(messageText, 'ai', Date.now(), true);
-                    })
-                    .catch((error) => {
-                        console.error('Ошибка отправки сообщения:', error);
-                    });
-            } else if (!isAdmin) {
-                // Обычный пользователь отправляет сообщение
-                database.ref('messages/' + currentSessionId).push(messageData)
-                    .then(() => {
-                        console.log('Сообщение пользователя отправлено');
-                        displayMessage(messageText, 'user', Date.now(), false);
-                        
-                        // Обновляем время последней активности
-                        database.ref('sessions/' + currentSessionId).update({
+            } else {
+                // Обычный пользователь отправляет в свою сессию
+                if (!targetSessionId) {
+                    targetSessionId = generateSessionId();
+                    currentSessionId = targetSessionId;
+                    startUserSession();
+                }
+            }
+
+            // Сохраняем сообщение в Firebase
+            database.ref('messages/' + targetSessionId).push(messageData)
+                .then(() => {
+                    console.log('Сообщение отправлено в сессию:', targetSessionId);
+                    updateDebugInfo('Сообщение отправлено');
+                    
+                    // Показываем сообщение локально сразу
+                    displayMessage(messageText, isAdmin ? 'ai' : 'user', Date.now(), isAdmin);
+                    
+                    if (!isAdmin) {
+                        // Обновляем активность
+                        database.ref('sessions/' + targetSessionId).update({
                             lastActivity: Date.now()
                         });
 
+                        // Показываем индикатор "Генерирую..."
+                        showTypingIndicator();
+
                         // Если ИИ включен, генерируем ответ
                         if (isAIEnabled) {
-                            generateAIResponse(messageText);
-                        } else {
-                            // Показываем индикатор "Генерирую..." для обычных пользователей
-                            showTypingIndicator();
+                            setTimeout(() => {
+                                generateAIResponse(messageText, targetSessionId);
+                            }, 1000);
                         }
-                    })
-                    .catch((error) => {
-                        console.error('Ошибка отправки сообщения:', error);
-                    });
-            }
+                    }
+                })
+                .catch((error) => {
+                    console.error('Ошибка отправки сообщения:', error);
+                    showNotification('Ошибка отправки сообщения');
+                    updateDebugInfo('Ошибка отправки');
+                });
 
             messageInput.value = '';
         }
 
         // Генерация ответа ИИ
-        function generateAIResponse(userMessage) {
-            showTypingIndicator();
+        function generateAIResponse(userMessage, sessionId) {
+            hideTypingIndicator();
             
-            setTimeout(() => {
-                hideTypingIndicator();
-                
-                const responses = [
-                    "Интересный вопрос! Давайте подумаем над этим вместе.",
-                    "Спасибо за ваш запрос. Я анализирую информацию...",
-                    "На основе моих знаний, я могу предложить следующее...",
-                    "Это сложный вопрос. Давайте разберем его по частям.",
-                    "Я нашел несколько решений для вашей проблемы."
-                ];
-                
-                const response = responses[Math.floor(Math.random() * responses.length)];
-                const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                const messageData = {
-                    id: messageId,
-                    text: response,
-                    sender: 'ai',
-                    timestamp: Date.now(),
-                    isAdmin: false
-                };
-                
-                database.ref('messages/' + currentSessionId).push(messageData)
-                    .then(() => {
-                        console.log('Ответ ИИ отправлен');
-                    })
-                    .catch((error) => {
-                        console.error('Ошибка отправки ответа ИИ:', error);
-                    });
-            }, 2000);
+            const responses = [
+                "Интересный вопрос! Давайте подумаем над этим вместе.",
+                "Спасибо за ваш запрос. Я анализирую информацию...",
+                "На основе моих знаний, я могу предложить следующее...",
+                "Это сложный вопрос. Давайте разберем его по частям.",
+                "Я нашел несколько решений для вашей проблемы."
+            ];
+            
+            const response = responses[Math.floor(Math.random() * responses.length)];
+            const messageData = {
+                text: response,
+                sender: 'ai',
+                timestamp: Date.now(),
+                isAdmin: false
+            };
+            
+            database.ref('messages/' + sessionId).push(messageData)
+                .then(() => {
+                    console.log('Ответ ИИ отправлен');
+                    updateDebugInfo('Ответ ИИ отправлен');
+                })
+                .catch((error) => {
+                    console.error('Ошибка отправки ответа ИИ:', error);
+                });
         }
 
         // Показать индикатор набора текста
         function showTypingIndicator() {
-            // Создаем временное сообщение "Генерирую..."
-            const tempMessageId = 'temp_generating';
-            if (!document.getElementById(tempMessageId)) {
-                const generatingDiv = document.createElement('div');
-                generatingDiv.id = tempMessageId;
-                generatingDiv.classList.add('message', 'ai-message');
-                generatingDiv.textContent = "Генерирую...";
-                chatContainer.appendChild(generatingDiv);
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            }
+            typingIndicator.style.display = 'flex';
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         // Скрыть индикатор набора текста
         function hideTypingIndicator() {
-            const generatingDiv = document.getElementById('temp_generating');
-            if (generatingDiv) {
-                generatingDiv.remove();
-            }
+            typingIndicator.style.display = 'none';
         }
 
         // Отображение сообщения
         function displayMessage(text, sender, timestamp, isAdminMessage = false) {
-            // Убираем индикатор "Генерирую..." если он есть
-            hideTypingIndicator();
-
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message');
-            messageDiv.setAttribute('data-message-id', timestamp);
             
             if (sender === 'user') {
                 messageDiv.classList.add('user-message');
@@ -903,6 +933,7 @@
             welcomeSection.style.display = 'none';
             chatInterface.style.display = 'flex';
             messageInput.focus();
+            updateDebugInfo('Чат активирован');
         }
 
         // Показать приветственный экран
@@ -911,6 +942,7 @@
             welcomeSection.style.display = 'flex';
             chatInterface.style.display = 'none';
             chatContainer.innerHTML = '';
+            updateDebugInfo('Приветственный экран');
         }
 
         // Обработчики событий
@@ -977,6 +1009,7 @@
 
         // Инициализация приложения
         function init() {
+            console.log('Инициализация приложения...');
             checkIP();
         }
 
