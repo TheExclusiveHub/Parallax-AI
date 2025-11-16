@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parallax AI</title>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -439,6 +444,34 @@
         .modal-btn:hover {
             transform: translateY(-2px);
         }
+
+        .message-time {
+            font-size: 0.7rem;
+            color: #888;
+            margin-top: 5px;
+            text-align: right;
+        }
+
+        .admin-message {
+            border: 1px solid #ffeb3b;
+            background: rgba(255, 235, 59, 0.1) !important;
+        }
+
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .status-online {
+            background: #4CAF50;
+        }
+
+        .status-offline {
+            background: #f44336;
+        }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -512,21 +545,28 @@
     </div>
 
     <script>
-        // Проверка IP-адреса для отображения админ-панели
-        function checkIP() {
-            // В реальном приложении здесь будет код для получения IP пользователя
-            // Для демонстрации используем фиктивный IP
-            const userIP = "171.33.254.90"; // Замените на реальный IP пользователя
-            
-            if (userIP === "171.33.254.90") {
-                document.getElementById('adminControls').style.display = 'flex';
-            }
-        }
+        // Конфигурация Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyAFIpyjJc1ciuIDYnx19LQMj_rp-PawVgQ",
+            authDomain: "parallax-ai-13db8.firebaseapp.com",
+            databaseURL: "https://parallax-ai-13db8-default-rtdb.firebaseio.com",
+            projectId: "parallax-ai-13db8",
+            storageBucket: "parallax-ai-13db8.firebasestorage.app",
+            messagingSenderId: "1074202165112",
+            appId: "1:1074202165112:web:212fba00ad11a48b01528d"
+        };
+
+        // Инициализация Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
 
         // Переменные состояния
         let isAIEnabled = false;
         let currentUser = null;
         let isChatActive = false;
+        let currentSessionId = null;
+        let isAdmin = false;
+        let messageListener = null;
 
         // Элементы DOM
         const chatContainer = document.getElementById('chatContainer');
@@ -543,16 +583,229 @@
         const modalCancel = document.getElementById('modalCancel');
         const modalOk = document.getElementById('modalOk');
         const chatInterface = document.getElementById('chatInterface');
+        const adminControls = document.getElementById('adminControls');
 
-        // Инициализация
-        function init() {
-            checkIP();
-            
-            // Генерируем список пользователей для админ-панели
-            generateUserList();
+        // Генерация ID сессии
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         }
 
-        // Активировать чат (скрыть приветствие, показать чат)
+        // Проверка IP-адреса для отображения админ-панели
+        function checkIP() {
+            // В реальном приложении здесь будет код для получения IP пользователя
+            // Для демонстрации используем фиктивный IP
+            const userIP = "171.33.254.90"; // Замените на реальный IP пользователя
+            
+            if (userIP === "171.33.254.90") {
+                isAdmin = true;
+                adminControls.style.display = 'flex';
+                loadActiveSessions();
+            } else {
+                // Обычный пользователь
+                currentSessionId = generateSessionId();
+                startUserSession();
+            }
+        }
+
+        // Начало сессии пользователя
+        function startUserSession() {
+            const sessionData = {
+                createdAt: Date.now(),
+                lastActivity: Date.now(),
+                status: 'active',
+                userAgent: navigator.userAgent
+            };
+            
+            database.ref('sessions/' + currentSessionId).set(sessionData);
+            
+            // Слушаем сообщения для этой сессии
+            setupMessageListener(currentSessionId);
+            
+            // Обновляем активность каждые 30 секунд
+            setInterval(() => {
+                database.ref('sessions/' + currentSessionId).update({
+                    lastActivity: Date.now()
+                });
+            }, 30000);
+        }
+
+        // Настройка слушателя сообщений
+        function setupMessageListener(sessionId) {
+            if (messageListener) {
+                messageListener(); // Отключаем предыдущий слушатель
+            }
+            
+            messageListener = database.ref('messages/' + sessionId).on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                if (!isMessageDisplayed(message.timestamp)) {
+                    displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
+                }
+            });
+        }
+
+        // Проверка, отображено ли сообщение уже
+        function isMessageDisplayed(timestamp) {
+            const messages = chatContainer.querySelectorAll('.message');
+            for (let msg of messages) {
+                const timeElement = msg.querySelector('.message-time');
+                if (timeElement && timeElement.textContent === new Date(timestamp).toLocaleTimeString()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Загрузка активных сессий для админа
+        function loadActiveSessions() {
+            database.ref('sessions').on('value', (snapshot) => {
+                const sessions = snapshot.val();
+                userList.innerHTML = '';
+                
+                if (sessions) {
+                    Object.keys(sessions).forEach(sessionId => {
+                        const session = sessions[sessionId];
+                        const isActive = (Date.now() - session.lastActivity) < 60000; // 1 минута
+                        
+                        const userItem = document.createElement('div');
+                        userItem.classList.add('user-item');
+                        
+                        const statusClass = isActive ? 'status-online' : 'status-offline';
+                        const statusText = isActive ? 'Online' : 'Offline';
+                        
+                        userItem.innerHTML = `
+                            <span class="status-indicator ${statusClass}"></span>
+                            Сессия: ${sessionId.substr(0, 8)}... (${statusText})
+                            <br><small>Создана: ${new Date(session.createdAt).toLocaleTimeString()}</small>
+                        `;
+                        
+                        userItem.setAttribute('data-session', sessionId);
+                        
+                        userItem.addEventListener('click', function() {
+                            document.querySelectorAll('.user-item').forEach(item => {
+                                item.classList.remove('selected');
+                            });
+                            this.classList.add('selected');
+                            currentSessionId = this.getAttribute('data-session');
+                        });
+                        
+                        userList.appendChild(userItem);
+                    });
+                } else {
+                    userList.innerHTML = '<div style="text-align: center; color: #888;">Нет активных сессий</div>';
+                }
+            });
+        }
+
+        // Отправка сообщения
+        function sendMessage() {
+            const messageText = messageInput.value.trim();
+            if (messageText === '') return;
+
+            // Если это первое сообщение, активируем чат
+            if (!isChatActive) {
+                activateChat();
+            }
+
+            const messageData = {
+                text: messageText,
+                sender: 'user',
+                timestamp: Date.now(),
+                isAdmin: false
+            };
+
+            // Сохраняем сообщение в Firebase
+            if (isAdmin && currentSessionId) {
+                // Админ отправляет сообщение от имени ИИ
+                messageData.sender = 'ai';
+                messageData.isAdmin = true;
+                database.ref('messages/' + currentSessionId).push(messageData);
+            } else if (!isAdmin) {
+                // Обычный пользователь отправляет сообщение
+                database.ref('messages/' + currentSessionId).push(messageData);
+                
+                // Обновляем время последней активности
+                database.ref('sessions/' + currentSessionId).update({
+                    lastActivity: Date.now()
+                });
+
+                // Если ИИ включен, генерируем ответ
+                if (isAIEnabled) {
+                    generateAIResponse(messageText);
+                } else {
+                    // Показываем индикатор "Генерирую..." для обычных пользователей
+                    showTypingIndicator();
+                }
+            }
+
+            // Показываем сообщение локально
+            displayMessage(messageText, 'user', Date.now(), false);
+            messageInput.value = '';
+        }
+
+        // Генерация ответа ИИ
+        function generateAIResponse(userMessage) {
+            showTypingIndicator();
+            
+            setTimeout(() => {
+                hideTypingIndicator();
+                
+                const responses = [
+                    "Интересный вопрос! Давайте подумаем над этим вместе.",
+                    "Спасибо за ваш запрос. Я анализирую информацию...",
+                    "На основе моих знаний, я могу предложить следующее...",
+                    "Это сложный вопрос. Давайте разберем его по частям.",
+                    "Я нашел несколько решений для вашей проблемы."
+                ];
+                
+                const response = responses[Math.floor(Math.random() * responses.length)];
+                const messageData = {
+                    text: response,
+                    sender: 'ai',
+                    timestamp: Date.now(),
+                    isAdmin: false
+                };
+                
+                database.ref('messages/' + currentSessionId).push(messageData);
+            }, 2000);
+        }
+
+        // Показать индикатор набора текста
+        function showTypingIndicator() {
+            typingIndicator.style.display = 'flex';
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Скрыть индикатор набора текста
+        function hideTypingIndicator() {
+            typingIndicator.style.display = 'none';
+        }
+
+        // Отображение сообщения
+        function displayMessage(text, sender, timestamp, isAdminMessage = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+            
+            if (sender === 'user') {
+                messageDiv.classList.add('user-message');
+            } else {
+                messageDiv.classList.add('ai-message');
+                if (isAdminMessage) {
+                    messageDiv.classList.add('admin-message');
+                }
+            }
+            
+            messageDiv.textContent = text;
+            
+            const timeDiv = document.createElement('div');
+            timeDiv.classList.add('message-time');
+            timeDiv.textContent = new Date(timestamp).toLocaleTimeString();
+            
+            messageDiv.appendChild(timeDiv);
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Активировать чат
         function activateChat() {
             isChatActive = true;
             welcomeSection.style.display = 'none';
@@ -565,83 +818,7 @@
             isChatActive = false;
             welcomeSection.style.display = 'flex';
             chatInterface.style.display = 'none';
-            
-            // Очищаем чат
             chatContainer.innerHTML = '';
-        }
-
-        // Генерация списка пользователей
-        function generateUserList() {
-            userList.innerHTML = '';
-            for (let i = 0; i < 10; i++) {
-                const userItem = document.createElement('div');
-                userItem.classList.add('user-item');
-                userItem.textContent = `user_${Math.floor(Math.random() * 1000)}`;
-                userItem.addEventListener('click', function() {
-                    // Убираем выделение у всех элементов
-                    document.querySelectorAll('.user-item').forEach(item => {
-                        item.classList.remove('selected');
-                    });
-                    // Выделяем выбранный элемент
-                    this.classList.add('selected');
-                    currentUser = this.textContent;
-                });
-                userList.appendChild(userItem);
-            }
-        }
-
-        // Добавление сообщения в чат
-        function addMessage(text, sender) {
-            const messageDiv = document.createElement('div');
-            messageDiv.classList.add('message');
-            messageDiv.classList.add(sender === 'user' ? 'user-message' : 'ai-message');
-            messageDiv.textContent = text;
-            chatContainer.appendChild(messageDiv);
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-
-        // Отправка сообщения
-        function sendMessage() {
-            const message = messageInput.value.trim();
-            if (message === '') return;
-
-            // Если это первое сообщение, активируем чат
-            if (!isChatActive) {
-                activateChat();
-            }
-
-            addMessage(message, 'user');
-            messageInput.value = '';
-
-            // Показать индикатор набора текста
-            typingIndicator.style.display = 'flex';
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-
-            // Имитация ответа ИИ
-            setTimeout(() => {
-                typingIndicator.style.display = 'none';
-                
-                if (isAIEnabled) {
-                    // Реальный ответ ИИ
-                    const responses = [
-                        "Интересный вопрос! Давайте подумаем над этим вместе.",
-                        "Спасибо за ваш запрос. Я анализирую информацию...",
-                        "На основе моих знаний, я могу предложить следующее...",
-                        "Это сложный вопрос. Давайте разберем его по частям.",
-                        "Я нашел несколько решений для вашей проблемы."
-                    ];
-                    const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-                    addMessage(randomResponse, 'ai');
-                } else {
-                    // Ответ от администратора (имитация)
-                    addMessage("Генерирую...", 'ai');
-                    
-                    // В реальном приложении здесь будет уведомление администратору
-                    if (currentUser) {
-                        console.log(`Администратору: Пользователь ${currentUser} отправил сообщение: "${message}"`);
-                    }
-                }
-            }, 2000);
         }
 
         // Обработчики событий
@@ -675,18 +852,38 @@
         });
 
         modalOk.addEventListener('click', () => {
-            if (currentUser) {
+            if (currentSessionId) {
                 userSelectModal.style.display = 'none';
-                // Здесь можно добавить логику для выбора пользователя
-                console.log(`Выбран пользователь: ${currentUser}`);
+                
+                // Настраиваем слушатель для выбранной сессии
+                setupMessageListener(currentSessionId);
+                
+                // Загружаем историю сообщений выбранной сессии
+                database.ref('messages/' + currentSessionId).once('value').then((snapshot) => {
+                    chatContainer.innerHTML = '';
+                    const messages = snapshot.val();
+                    
+                    if (messages) {
+                        Object.values(messages).forEach(message => {
+                            displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
+                        });
+                    }
+                    
+                    activateChat();
+                });
             } else {
-                alert('Пожалуйста, выберите пользователя');
+                alert('Пожалуйста, выберите сессию');
             }
         });
 
         header.addEventListener('click', () => {
             showWelcomeScreen();
         });
+
+        // Инициализация приложения
+        function init() {
+            checkIP();
+        }
 
         // Запуск приложения
         window.onload = init;
