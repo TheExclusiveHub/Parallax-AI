@@ -4,11 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parallax AI</title>
-    
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
-    
     <style>
         * {
             margin: 0;
@@ -496,31 +491,12 @@
             font-size: 12px;
             z-index: 1000;
         }
-
-        .firebase-error {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(244, 67, 54, 0.9);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            z-index: 1002;
-            max-width: 400px;
-        }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="debug-info" id="debugInfo">Статус: Загрузка...</div>
+    <div class="debug-info" id="debugInfo">Режим: Локальный (Firebase не настроен)</div>
     <div class="notification" id="notification"></div>
-    <div class="firebase-error" id="firebaseError" style="display: none;">
-        <h3>Ошибка Firebase</h3>
-        <p id="errorMessage"></p>
-        <button onclick="document.getElementById('firebaseError').style.display='none'">Закрыть</button>
-    </div>
 
     <div class="admin-controls" id="adminControls">
         <button class="admin-btn" id="selectUserBtn">
@@ -581,7 +557,7 @@
         <div class="user-select-content">
             <h2 class="user-select-title">Выберите пользователя</h2>
             <div class="user-list" id="userList">
-                <div style="text-align: center; color: #888; padding: 20px;">Загрузка сессий...</div>
+                <div style="text-align: center; color: #888; padding: 20px;">Локальный режим - Firebase не настроен</div>
             </div>
             <div class="modal-buttons">
                 <button class="modal-btn modal-cancel" id="modalCancel">Отмена</button>
@@ -591,24 +567,10 @@
     </div>
 
     <script>
-        // Конфигурация Firebase
-        const firebaseConfig = {
-            apiKey: "AIzaSyAFIpyjJc1ciuIDYnx19LQMj_rp-PawVgQ",
-            authDomain: "parallax-ai-13db8.firebaseapp.com",
-            databaseURL: "https://parallax-ai-13db8-default-rtdb.firebaseio.com",
-            projectId: "parallax-ai-13db8",
-            storageBucket: "parallax-ai-13db8.firebasestorage.app",
-            messagingSenderId: "1074202165112",
-            appId: "1:1074202165112:web:212fba00ad11a48b01528d"
-        };
-
         // Переменные состояния
-        let database = null;
         let isAIEnabled = false;
-        let currentUser = null;
         let isChatActive = false;
-        let currentSessionId = null;
-        let isAdmin = false;
+        let isAdmin = true; // Для тестирования всегда админ
 
         // Элементы DOM
         const chatContainer = document.getElementById('chatContainer');
@@ -618,148 +580,25 @@
         const enableAIBtn = document.getElementById('enableAIBtn');
         const selectUserBtn = document.getElementById('selectUserBtn');
         const welcomeSection = document.getElementById('welcomeSection');
-        const inputContainer = document.getElementById('inputContainer');
-        const header = document.getElementById('header');
-        const userSelectModal = document.getElementById('userSelectModal');
-        const userList = document.getElementById('userList');
-        const modalCancel = document.getElementById('modalCancel');
-        const modalOk = document.getElementById('modalOk');
-        const chatInterface = document.getElementById('chatInterface');
         const adminControls = document.getElementById('adminControls');
         const notification = document.getElementById('notification');
         const debugInfo = document.getElementById('debugInfo');
-        const firebaseError = document.getElementById('firebaseError');
-        const errorMessage = document.getElementById('errorMessage');
-
-        // Обновление отладочной информации
-        function updateDebugInfo(message) {
-            debugInfo.textContent = message;
-            console.log('DEBUG:', message);
-        }
 
         // Показать уведомление
-        function showNotification(message, isError = false) {
+        function showNotification(message) {
             notification.textContent = message;
-            notification.style.background = isError ? '#f44336' : '#4CAF50';
             notification.style.display = 'block';
             setTimeout(() => {
                 notification.style.display = 'none';
             }, 3000);
         }
 
-        // Показать ошибку Firebase
-        function showFirebaseError(message) {
-            errorMessage.textContent = message;
-            firebaseError.style.display = 'block';
+        // Обновление отладочной информации
+        function updateDebugInfo(message) {
+            debugInfo.textContent = message;
         }
 
-        // Инициализация Firebase
-        function initializeFirebase() {
-            try {
-                firebase.initializeApp(firebaseConfig);
-                database = firebase.database();
-                
-                // Проверяем соединение с Firebase
-                database.ref('.info/connected').on('value', (snapshot) => {
-                    if (snapshot.val() === true) {
-                        updateDebugInfo('Firebase: Подключено');
-                        showNotification('Firebase подключен успешно');
-                        initApp();
-                    } else {
-                        updateDebugInfo('Firebase: Отключено');
-                        showFirebaseError('Нет соединения с Firebase. Проверьте настройки базы данных.');
-                    }
-                });
-                
-            } catch (error) {
-                console.error('Ошибка инициализации Firebase:', error);
-                updateDebugInfo('Firebase: Ошибка инициализации');
-                showFirebaseError('Ошибка инициализации Firebase: ' + error.message);
-            }
-        }
-
-        // Генерация ID сессии
-        function generateSessionId() {
-            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        }
-
-        // Проверка IP-адреса для отображения админ-панели
-        function checkIP() {
-            // Для тестирования используем простую проверку
-            const testAdmin = true; // Поставьте false для теста пользовательского режима
-            
-            if (testAdmin) {
-                isAdmin = true;
-                adminControls.style.display = 'flex';
-                updateDebugInfo('Режим: Админ');
-                showNotification('Режим администратора активирован');
-            } else {
-                currentSessionId = generateSessionId();
-                isAdmin = false;
-                updateDebugInfo('Режим: Пользователь');
-                showNotification('Добро пожаловать!');
-            }
-        }
-
-        // Загрузка активных сессий для админа
-        function loadActiveSessions() {
-            if (!database) {
-                updateDebugInfo('База данных не доступна');
-                return;
-            }
-
-            try {
-                database.ref('sessions').on('value', (snapshot) => {
-                    const sessions = snapshot.val();
-                    userList.innerHTML = '';
-                    
-                    if (sessions && Object.keys(sessions).length > 0) {
-                        Object.keys(sessions).forEach(sessionId => {
-                            const session = sessions[sessionId];
-                            const isActive = (Date.now() - session.lastActivity) < 300000; // 5 минут
-                            
-                            const userItem = document.createElement('div');
-                            userItem.classList.add('user-item');
-                            
-                            const statusClass = isActive ? 'status-online' : 'status-offline';
-                            const statusText = isActive ? 'Online' : 'Offline';
-                            
-                            userItem.innerHTML = `
-                                <span class="status-indicator ${statusClass}"></span>
-                                ${sessionId.substr(0, 12)}... (${statusText})
-                                <br><small>${new Date(session.createdAt).toLocaleString()}</small>
-                            `;
-                            
-                            userItem.setAttribute('data-session', sessionId);
-                            
-                            userItem.addEventListener('click', function() {
-                                document.querySelectorAll('.user-item').forEach(item => {
-                                    item.classList.remove('selected');
-                                });
-                                this.classList.add('selected');
-                                currentSessionId = sessionId;
-                                updateDebugInfo('Выбрана сессия: ' + sessionId.substr(0, 8));
-                            });
-                            
-                            userList.appendChild(userItem);
-                        });
-                        updateDebugInfo('Сессии загружены: ' + Object.keys(sessions).length);
-                    } else {
-                        userList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Нет активных сессий</div>';
-                        updateDebugInfo('Нет активных сессий');
-                    }
-                }, (error) => {
-                    console.error('Ошибка загрузки сессий:', error);
-                    updateDebugInfo('Ошибка загрузки сессий');
-                    showNotification('Ошибка загрузки сессий', true);
-                });
-            } catch (error) {
-                console.error('Ошибка:', error);
-                updateDebugInfo('Ошибка: ' + error.message);
-            }
-        }
-
-        // Отправка сообщения (упрощенная версия без Firebase)
+        // Отправка сообщения
         function sendMessage() {
             const messageText = messageInput.value.trim();
             if (messageText === '') return;
@@ -769,12 +608,12 @@
                 activateChat();
             }
 
-            // Показываем сообщение сразу
-            displayMessage(messageText, 'user', Date.now(), false);
+            // Показываем сообщение пользователя сразу
+            displayMessage(messageText, 'user', Date.now());
 
             if (isAdmin) {
                 // Админ - просто показываем сообщение
-                showNotification('Сообщение отправлено');
+                showNotification('Сообщение отправлено (локальный режим)');
             } else {
                 // Пользователь - показываем "Генерирую..."
                 showTypingIndicator();
@@ -782,15 +621,21 @@
                 // Имитируем ответ через 2 секунды
                 setTimeout(() => {
                     hideTypingIndicator();
-                    const responses = [
-                        "Интересный вопрос! Давайте подумаем над этим вместе.",
-                        "Спасибо за ваш запрос. Я анализирую информацию...",
-                        "На основе моих знаний, я могу предложить следующее...",
-                        "Это сложный вопрос. Давайте разберем его по частям.",
-                        "Я нашел несколько решений для вашей проблемы."
-                    ];
-                    const response = responses[Math.floor(Math.random() * responses.length)];
-                    displayMessage(response, 'ai', Date.now(), false);
+                    if (isAIEnabled) {
+                        // Ответ ИИ
+                        const responses = [
+                            "Интересный вопрос! Давайте подумаем над этим вместе.",
+                            "Спасибо за ваш запрос. Я анализирую информацию...",
+                            "На основе моих знаний, я могу предложить следующее...",
+                            "Это сложный вопрос. Давайте разберем его по частям.",
+                            "Я нашел несколько решений для вашей проблемы."
+                        ];
+                        const response = responses[Math.floor(Math.random() * responses.length)];
+                        displayMessage(response, 'ai', Date.now());
+                    } else {
+                        // Ожидание ответа от админа
+                        displayMessage("Генерирую...", 'ai', Date.now());
+                    }
                 }, 2000);
             }
 
@@ -809,7 +654,7 @@
         }
 
         // Отображение сообщения
-        function displayMessage(text, sender, timestamp, isAdminMessage = false) {
+        function displayMessage(text, sender, timestamp) {
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message');
             
@@ -817,9 +662,6 @@
                 messageDiv.classList.add('user-message');
             } else {
                 messageDiv.classList.add('ai-message');
-                if (isAdminMessage) {
-                    messageDiv.classList.add('admin-message');
-                }
             }
             
             messageDiv.textContent = text;
@@ -837,7 +679,7 @@
         function activateChat() {
             isChatActive = true;
             welcomeSection.style.display = 'none';
-            chatInterface.style.display = 'flex';
+            document.getElementById('chatInterface').style.display = 'flex';
             messageInput.focus();
             updateDebugInfo('Чат активирован');
         }
@@ -846,17 +688,17 @@
         function showWelcomeScreen() {
             isChatActive = false;
             welcomeSection.style.display = 'flex';
-            chatInterface.style.display = 'none';
+            document.getElementById('chatInterface').style.display = 'none';
             chatContainer.innerHTML = '';
             updateDebugInfo('Приветственный экран');
         }
 
-        // Инициализация приложения после успешной загрузки Firebase
-        function initApp() {
-            checkIP();
-            if (isAdmin) {
-                loadActiveSessions();
-            }
+        // Инициализация приложения
+        function init() {
+            // Всегда показываем админ-панель для тестирования
+            adminControls.style.display = 'flex';
+            updateDebugInfo('Режим: Админ (локальный)');
+            showNotification('Работает в локальном режиме');
         }
 
         // Обработчики событий
@@ -884,29 +726,24 @@
         });
 
         selectUserBtn.addEventListener('click', () => {
-            userSelectModal.style.display = 'flex';
+            document.getElementById('userSelectModal').style.display = 'flex';
         });
 
-        modalCancel.addEventListener('click', () => {
-            userSelectModal.style.display = 'none';
+        document.getElementById('modalCancel').addEventListener('click', () => {
+            document.getElementById('userSelectModal').style.display = 'none';
         });
 
-        modalOk.addEventListener('click', () => {
-            if (currentSessionId) {
-                userSelectModal.style.display = 'none';
-                activateChat();
-                showNotification('Сессия пользователя выбрана');
-            } else {
-                showNotification('Пожалуйста, выберите сессию', true);
-            }
+        document.getElementById('modalOk').addEventListener('click', () => {
+            document.getElementById('userSelectModal').style.display = 'none';
+            showNotification('В локальном режиме выбор пользователя не доступен');
         });
 
-        header.addEventListener('click', () => {
+        document.getElementById('header').addEventListener('click', () => {
             showWelcomeScreen();
         });
 
         // Запуск приложения
-        window.onload = initializeFirebase;
+        window.onload = init;
     </script>
 </body>
 </html>
