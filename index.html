@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parallax AI</title>
+    
     <style>
         * {
             margin: 0;
@@ -372,7 +373,7 @@
             border-radius: 20px;
             padding: 30px;
             width: 90%;
-            max-width: 400px;
+            max-width: 500px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
         }
 
@@ -452,6 +453,11 @@
             background: rgba(255, 235, 59, 0.1) !important;
         }
 
+        .ai-pending-message {
+            border: 1px solid #ff9800;
+            background: rgba(255, 152, 0, 0.1) !important;
+        }
+
         .status-indicator {
             width: 10px;
             height: 10px;
@@ -503,12 +509,27 @@
             font-size: 12px;
             z-index: 1000;
         }
+
+        .admin-input {
+            display: none;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 25px;
+            padding: 10px 15px;
+            margin: 10px;
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 800px;
+        }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="connection-status" id="connectionStatus">Готов к работе</div>
-    <div class="debug-info" id="debugInfo">Режим: Локальный чат</div>
+    <div class="connection-status" id="connectionStatus">Подключение...</div>
+    <div class="debug-info" id="debugInfo">Загрузка...</div>
     <div class="notification" id="notification"></div>
 
     <div class="admin-controls" id="adminControls">
@@ -517,6 +538,13 @@
         </button>
         <button class="admin-btn" id="enableAIBtn">
             <i class="fas fa-robot"></i> Enable AI
+        </button>
+    </div>
+
+    <div class="admin-input" id="adminInputContainer">
+        <input type="text" class="message-input" id="adminMessageInput" placeholder="Ответ пользователю...">
+        <button class="send-btn" id="adminSendBtn">
+            <i class="fas fa-paper-plane"></i>
         </button>
     </div>
 
@@ -570,22 +598,29 @@
         <div class="user-select-content">
             <h2 class="user-select-title">Выберите пользователя</h2>
             <div class="user-list" id="userList">
-                <div style="text-align: center; color: #888; padding: 20px;">Локальные сессии</div>
+                <div style="text-align: center; color: #888; padding: 20px;">Загрузка пользователей...</div>
+            </div>
+            <div class="user-list" id="pendingUsersList" style="border-top: 1px solid #333; padding-top: 15px; margin-top: 15px;">
+                <div style="text-align: center; color: #888; padding: 10px;">Ожидают ответа ИИ...</div>
             </div>
             <div class="modal-buttons">
                 <button class="modal-btn modal-cancel" id="modalCancel">Отмена</button>
-                <button class="modal-btn modal-ok" id="modalOk">OK</button>
+                <button class="modal-btn modal-ok" id="modalOk">Выбрать</button>
             </div>
         </div>
     </div>
 
     <script>
+        // Конфигурация API
+        const API_BASE = '/api';
+
         // Переменные состояния
         let isAIEnabled = false;
         let isChatActive = false;
         let currentSessionId = null;
         let selectedSessionId = null;
         let isAdmin = false;
+        let checkAIPendingInterval = null;
 
         // Элементы DOM
         const chatContainer = document.getElementById('chatContainer');
@@ -596,10 +631,14 @@
         const selectUserBtn = document.getElementById('selectUserBtn');
         const welcomeSection = document.getElementById('welcomeSection');
         const adminControls = document.getElementById('adminControls');
+        const adminInputContainer = document.getElementById('adminInputContainer');
+        const adminMessageInput = document.getElementById('adminMessageInput');
+        const adminSendBtn = document.getElementById('adminSendBtn');
         const notification = document.getElementById('notification');
         const debugInfo = document.getElementById('debugInfo');
         const connectionStatus = document.getElementById('connectionStatus');
         const userList = document.getElementById('userList');
+        const pendingUsersList = document.getElementById('pendingUsersList');
 
         // Показать уведомление
         function showNotification(message) {
@@ -620,208 +659,260 @@
             return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         }
 
-        // Проверка IP для админ-панели
-        function checkIP() {
-            // Для тестирования - всегда админ режим
-            isAdmin = true;
-            adminControls.style.display = 'flex';
-            updateDebugInfo('Режим: Админ (локальный)');
-            loadUserSessions();
-            
-            // Создаем сессию для текущего пользователя
-            currentSessionId = generateSessionId();
-            startUserSession();
+        // Проверка IP и инициализация
+        async function checkIPAndInit() {
+            try {
+                const response = await fetch(`${API_BASE}/sessions`);
+                const data = await response.json();
+                
+                isAdmin = data.isAdmin;
+                updateDebugInfo(`IP: ${data.yourIP} | Режим: ${isAdmin ? 'Админ' : 'Пользователь'}`);
+                
+                if (isAdmin) {
+                    adminControls.style.display = 'flex';
+                    loadUserSessions();
+                } else {
+                    adminControls.style.display = 'none';
+                }
+                
+                // Создаем сессию для текущего пользователя
+                currentSessionId = generateSessionId();
+                startUserSession();
+                
+            } catch (error) {
+                console.error('Ошибка проверки IP:', error);
+                updateDebugInfo('Ошибка подключения');
+                // fallback - создаем сессию без проверки IP
+                currentSessionId = generateSessionId();
+                startUserSession();
+            }
         }
 
         // Запуск сессии пользователя
         function startUserSession() {
-            const sessionData = {
-                createdAt: Date.now(),
-                lastActivity: Date.now(),
-                status: 'active',
-                userAgent: navigator.userAgent
-            };
-
-            // Сохраняем сессию в localStorage
-            saveSession(sessionData);
-            console.log('Сессия создана:', currentSessionId);
-            updateConnectionStatus('Локальный режим');
-
+            updateConnectionStatus('Подключено');
+            
             // Загружаем историю сообщений
             loadMessages();
+            
+            // Запускаем проверку ожидающих ответов ИИ
+            if (!isAdmin) {
+                startAIPendingCheck();
+            }
         }
 
-        // Сохранение сессии
-        function saveSession(sessionData) {
-            const sessions = getSessions();
-            sessions[currentSessionId] = sessionData;
-            localStorage.setItem('chat_sessions', JSON.stringify(sessions));
+        // Запуск проверки ожидающих ответов ИИ
+        function startAIPendingCheck() {
+            checkAIPendingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/check-ai-pending?sessionId=${currentSessionId}`);
+                    const data = await response.json();
+                    
+                    if (data.hasPendingAI && !isTypingIndicatorVisible()) {
+                        showTypingIndicator();
+                    } else if (!data.hasPendingAI && isTypingIndicatorVisible()) {
+                        hideTypingIndicator();
+                        loadMessages(); // Перезагружаем сообщения если получили ответ
+                    }
+                } catch (error) {
+                    console.error('Ошибка проверки ИИ:', error);
+                }
+            }, 2000);
         }
 
-        // Получение всех сессий
-        function getSessions() {
-            return JSON.parse(localStorage.getItem('chat_sessions') || '{}');
-        }
-
-        // Сохранение сообщения
-        function saveMessage(messageData) {
-            const messages = getMessages(currentSessionId);
-            messages.push(messageData);
-            localStorage.setItem(`messages_${currentSessionId}`, JSON.stringify(messages));
-        }
-
-        // Получение сообщений сессии
-        function getMessages(sessionId) {
-            return JSON.parse(localStorage.getItem(`messages_${sessionId}`) || '[]');
+        // Проверка видимости индикатора набора
+        function isTypingIndicatorVisible() {
+            return typingIndicator.style.display === 'flex';
         }
 
         // Загрузка сессий пользователей для админа
-        function loadUserSessions() {
-            const sessions = getSessions();
-            userList.innerHTML = '';
-
-            if (Object.keys(sessions).length > 0) {
-                Object.keys(sessions).forEach(sessionId => {
-                    const session = sessions[sessionId];
-                    const isActive = (Date.now() - session.lastActivity) < 120000;
+        async function loadUserSessions() {
+            try {
+                const response = await fetch(`${API_BASE}/sessions`);
+                const data = await response.json();
+                
+                userList.innerHTML = '';
+                pendingUsersList.innerHTML = '<div style="text-align: center; color: #ff9800; padding: 10px; font-weight: bold;">Ожидают ответа ИИ:</div>';
+                
+                let hasPendingUsers = false;
+                
+                for (const session of data.sessions) {
+                    // Проверяем есть ли ожидающие сообщения
+                    const pendingResponse = await fetch(`${API_BASE}/check-ai-pending?sessionId=${session.id}`);
+                    const pendingData = await pendingResponse.json();
+                    
+                    const isActive = (Date.now() - new Date(session.last_activity).getTime()) < 120000;
+                    const hasPending = pendingData.hasPendingAI;
 
                     const userItem = document.createElement('div');
                     userItem.classList.add('user-item');
+                    if (hasPending) {
+                        userItem.classList.add('ai-pending-message');
+                    }
                     
                     const statusClass = isActive ? 'status-online' : 'status-offline';
                     const statusText = isActive ? 'Online' : 'Offline';
+                    const pendingText = hasPending ? ' ⏳ Ожидает ИИ' : '';
                     
                     userItem.innerHTML = `
                         <span class="status-indicator ${statusClass}"></span>
-                        ${sessionId} (${statusText})
-                        <br><small>Создана: ${new Date(session.createdAt).toLocaleString()}</small>
+                        ${session.id} (${statusText}${pendingText})
+                        <br><small>IP: ${session.ip_address || 'unknown'}</small>
+                        <br><small>Создана: ${new Date(session.created_at).toLocaleString()}</small>
                     `;
                     
-                    userItem.setAttribute('data-session', sessionId);
+                    userItem.setAttribute('data-session', session.id);
                     
                     userItem.addEventListener('click', function() {
                         document.querySelectorAll('.user-item').forEach(item => {
                             item.classList.remove('selected');
                         });
                         this.classList.add('selected');
-                        selectedSessionId = sessionId;
-                        updateDebugInfo('Выбрана сессия: ' + sessionId);
+                        selectedSessionId = session.id;
+                        updateDebugInfo('Выбрана сессия: ' + session.id);
+                        
+                        // Показываем поле ввода для админа
+                        adminInputContainer.style.display = 'flex';
                     });
                     
-                    userList.appendChild(userItem);
-                });
-                updateDebugInfo(`Локальных сессий: ${Object.keys(sessions).length}`);
-            } else {
-                userList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Нет сохраненных сессий</div>';
+                    if (hasPending) {
+                        pendingUsersList.appendChild(userItem);
+                        hasPendingUsers = true;
+                    } else {
+                        userList.appendChild(userItem);
+                    }
+                }
+                
+                if (!hasPendingUsers) {
+                    pendingUsersList.innerHTML += '<div style="text-align: center; color: #888; padding: 10px;">Нет пользователей, ожидающих ответа</div>';
+                }
+                
+                updateDebugInfo(`Загружено сессий: ${data.sessions.length}`);
+                
+            } catch (error) {
+                console.error('Ошибка загрузки сессий:', error);
+                userList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Ошибка загрузки</div>';
             }
         }
 
         // Загрузка сообщений
-        function loadMessages() {
-            const messages = getMessages(currentSessionId);
-            chatContainer.innerHTML = '';
-            
-            messages.forEach(message => {
-                displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
-            });
+        async function loadMessages() {
+            try {
+                const response = await fetch(`${API_BASE}/messages?sessionId=${currentSessionId}`);
+                const messages = await response.json();
+                
+                chatContainer.innerHTML = '';
+                messages.forEach(msg => {
+                    displayMessage(msg.text, msg.sender, new Date(msg.created_at).getTime(), msg.is_admin);
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки сообщений:', error);
+            }
         }
 
-        // Отправка сообщения
-        function sendMessage() {
+        // Отправка сообщения пользователем
+        async function sendMessage() {
             const messageText = messageInput.value.trim();
             if (messageText === '') return;
 
-            // Активируем чат при первом сообщении
             if (!isChatActive) {
                 activateChat();
             }
 
             const messageData = {
-                id: 'msg_' + Date.now(),
+                sessionId: currentSessionId,
                 text: messageText,
                 sender: 'user',
-                timestamp: Date.now(),
-                isAdmin: false
+                needsAiResponse: true // Помечаем что ждем ответ ИИ
             };
 
-            let targetSession = isAdmin ? selectedSessionId : currentSessionId;
+            try {
+                const response = await fetch(`${API_BASE}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(messageData)
+                });
 
-            if (isAdmin && !targetSession) {
+                if (response.ok) {
+                    displayMessage(messageText, 'user', Date.now(), false);
+                    messageInput.value = '';
+                    
+                    // Показываем индикатор "Генерирую..."
+                    showTypingIndicator();
+                }
+            } catch (error) {
+                console.error('Ошибка отправки:', error);
+                showNotification('Ошибка отправки сообщения');
+            }
+        }
+
+        // Отправка сообщения админом
+        async function sendAdminMessage() {
+            const messageText = adminMessageInput.value.trim();
+            if (messageText === '' || !selectedSessionId) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/send-message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: selectedSessionId,
+                        text: messageText
+                    })
+                });
+
+                if (response.ok) {
+                    adminMessageInput.value = '';
+                    showNotification('Сообщение отправлено');
+                    
+                    // Если открыт чат этого пользователя, обновляем
+                    if (isAdmin && selectedSessionId === currentSessionId) {
+                        loadMessages();
+                    }
+                } else {
+                    showNotification('Ошибка отправки');
+                }
+            } catch (error) {
+                console.error('Ошибка отправки админа:', error);
+                showNotification('Ошибка отправки');
+            }
+        }
+
+        // Включение/выключение ИИ для сессии
+        async function toggleAIForSession() {
+            if (!selectedSessionId) {
                 showNotification('Выберите пользователя!');
                 return;
             }
 
-            if (!targetSession) {
-                targetSession = generateSessionId();
-                currentSessionId = targetSession;
-                startUserSession();
-            }
+            try {
+                const response = await fetch(`${API_BASE}/admin/toggle-ai`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sessionId: selectedSessionId,
+                        enableAI: !isAIEnabled
+                    })
+                });
 
-            // Сохраняем сообщение
-            saveMessage(messageData);
-            console.log('Сообщение сохранено в сессию:', targetSession);
-            
-            // Показываем сообщение локально
-            if (isAdmin) {
-                displayMessage(messageText, 'ai', Date.now(), true);
-                showNotification('Сообщение сохранено');
-            } else {
-                displayMessage(messageText, 'user', Date.now(), false);
-                
-                // Обновляем активность
-                updateSessionActivity(targetSession);
-
-                // Показываем индикатор
-                showTypingIndicator();
-
-                // Авто-ответ ИИ если включен
-                if (isAIEnabled) {
-                    setTimeout(() => {
-                        generateAIResponse(messageText, targetSession);
-                    }, 2000);
+                if (response.ok) {
+                    isAIEnabled = !isAIEnabled;
+                    enableAIBtn.innerHTML = isAIEnabled ? 
+                        '<i class="fas fa-robot"></i> AI Enabled' : 
+                        '<i class="fas fa-robot"></i> Enable AI';
+                    
+                    if (isAIEnabled) {
+                        enableAIBtn.style.background = 'linear-gradient(135deg, #00c853, #009624)';
+                        showNotification('Режим ИИ включен для пользователя');
+                    } else {
+                        enableAIBtn.style.background = 'linear-gradient(135deg, #8a2be2, #4b0082)';
+                        showNotification('Режим ИИ выключен');
+                    }
                 }
+            } catch (error) {
+                console.error('Ошибка переключения ИИ:', error);
+                showNotification('Ошибка переключения ИИ');
             }
-
-            messageInput.value = '';
-        }
-
-        // Обновление активности сессии
-        function updateSessionActivity(sessionId) {
-            const sessions = getSessions();
-            if (sessions[sessionId]) {
-                sessions[sessionId].lastActivity = Date.now();
-                localStorage.setItem('chat_sessions', JSON.stringify(sessions));
-            }
-        }
-
-        // Генерация ответа ИИ
-        function generateAIResponse(userMessage, sessionId) {
-            hideTypingIndicator();
-
-            const responses = [
-                "Интересный вопрос! Давайте подумаем над этим вместе.",
-                "Спасибо за ваш запрос. Я анализирую информацию...",
-                "На основе моих знаний, я могу предложить следующее...",
-                "Это сложный вопрос. Давайте разберем его по частям.",
-                "Я нашел несколько решений для вашей проблемы.",
-                "Отличный вопрос! Давайте углубимся в эту тему.",
-                "Интересно! У меня есть несколько мыслей по этому поводу.",
-                "Спасибо за обращение. Вот что я могу предложить..."
-            ];
-
-            const response = responses[Math.floor(Math.random() * responses.length)];
-            const messageData = {
-                id: 'msg_' + Date.now(),
-                text: response,
-                sender: 'ai',
-                timestamp: Date.now(),
-                isAdmin: false
-            };
-
-            // Сохраняем ответ ИИ
-            saveMessage(messageData);
-            displayMessage(response, 'ai', Date.now(), false);
-            console.log('Ответ ИИ сохранен');
         }
 
         // Показать индикатор набора
@@ -875,6 +966,7 @@
             welcomeSection.style.display = 'flex';
             document.getElementById('chatInterface').style.display = 'none';
             chatContainer.innerHTML = '';
+            adminInputContainer.style.display = 'none';
         }
 
         // Обновление статуса соединения
@@ -885,12 +977,12 @@
 
         // Инициализация приложения
         function init() {
-            updateConnectionStatus('Локальный чат готов');
-            checkIP();
+            checkIPAndInit();
         }
 
         // Обработчики событий
         sendBtn.addEventListener('click', sendMessage);
+        adminSendBtn.addEventListener('click', sendAdminMessage);
         
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -898,20 +990,13 @@
             }
         });
 
-        enableAIBtn.addEventListener('click', () => {
-            isAIEnabled = !isAIEnabled;
-            enableAIBtn.innerHTML = isAIEnabled ? 
-                '<i class="fas fa-robot"></i> AI Enabled' : 
-                '<i class="fas fa-robot"></i> Enable AI';
-            
-            if (isAIEnabled) {
-                enableAIBtn.style.background = 'linear-gradient(135deg, #00c853, #009624)';
-                showNotification('Режим ИИ включен');
-            } else {
-                enableAIBtn.style.background = 'linear-gradient(135deg, #8a2be2, #4b0082)';
-                showNotification('Режим ИИ выключен');
+        adminMessageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendAdminMessage();
             }
         });
+
+        enableAIBtn.addEventListener('click', toggleAIForSession);
 
         selectUserBtn.addEventListener('click', () => {
             loadUserSessions();
@@ -920,22 +1005,16 @@
 
         document.getElementById('modalCancel').addEventListener('click', () => {
             document.getElementById('userSelectModal').style.display = 'none';
+            adminInputContainer.style.display = 'none';
         });
 
         document.getElementById('modalOk').addEventListener('click', () => {
             if (selectedSessionId) {
                 document.getElementById('userSelectModal').style.display = 'none';
                 
-                // Загружаем историю сообщений выбранного пользователя
-                const messages = getMessages(selectedSessionId);
-                chatContainer.innerHTML = '';
-                
-                if (messages.length > 0) {
-                    messages.forEach(message => {
-                        displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
-                    });
-                }
-                
+                // Переключаемся на выбранного пользователя
+                currentSessionId = selectedSessionId;
+                loadMessages();
                 activateChat();
                 showNotification('Чат пользователя загружен');
             } else {
