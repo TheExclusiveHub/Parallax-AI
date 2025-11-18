@@ -4,11 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parallax AI</title>
-    
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
-    
     <style>
         * {
             margin: 0;
@@ -512,8 +507,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="connection-status" id="connectionStatus">Подключение...</div>
-    <div class="debug-info" id="debugInfo">Загрузка...</div>
+    <div class="connection-status" id="connectionStatus">Готов к работе</div>
+    <div class="debug-info" id="debugInfo">Режим: Локальный чат</div>
     <div class="notification" id="notification"></div>
 
     <div class="admin-controls" id="adminControls">
@@ -575,7 +570,7 @@
         <div class="user-select-content">
             <h2 class="user-select-title">Выберите пользователя</h2>
             <div class="user-list" id="userList">
-                <div style="text-align: center; color: #888; padding: 20px;">Загрузка пользователей...</div>
+                <div style="text-align: center; color: #888; padding: 20px;">Локальные сессии</div>
             </div>
             <div class="modal-buttons">
                 <button class="modal-btn modal-cancel" id="modalCancel">Отмена</button>
@@ -585,27 +580,6 @@
     </div>
 
     <script>
-        // Конфигурация Firebase - ОБНОВИТЕ URL ЕСЛИ НУЖНО
-        const firebaseConfig = {
-            apiKey: "AIzaSyAFIpyjJc1ciuIDYnx19LQMj_rp-PawVgQ",
-            authDomain: "parallax-ai-13db8.firebaseapp.com",
-            databaseURL: "https://parallax-ai-13db8-default-rtdb.europe-central1.firebasedatabase.app",
-            projectId: "parallax-ai-13db8",
-            storageBucket: "parallax-ai-13db8.firebasestorage.app",
-            messagingSenderId: "1074202165112",
-            appId: "1:1074202165112:web:212fba00ad11a48b01528d"
-        };
-
-        // Инициализация Firebase
-        let database;
-        try {
-            firebase.initializeApp(firebaseConfig);
-            database = firebase.database();
-            console.log('Firebase инициализирован');
-        } catch (error) {
-            console.error('Ошибка Firebase:', error);
-        }
-
         // Переменные состояния
         let isAIEnabled = false;
         let isChatActive = false;
@@ -626,12 +600,6 @@
         const debugInfo = document.getElementById('debugInfo');
         const connectionStatus = document.getElementById('connectionStatus');
         const userList = document.getElementById('userList');
-
-        // Обновление статуса соединения
-        function updateConnectionStatus(message, isError = false) {
-            connectionStatus.textContent = message;
-            connectionStatus.style.background = isError ? '#f44336' : '#4CAF50';
-        }
 
         // Показать уведомление
         function showNotification(message) {
@@ -654,29 +622,19 @@
 
         // Проверка IP для админ-панели
         function checkIP() {
-            // Для тестирования - замените на ваш реальный IP
-            const userIP = "171.33.254.90";
+            // Для тестирования - всегда админ режим
+            isAdmin = true;
+            adminControls.style.display = 'flex';
+            updateDebugInfo('Режим: Админ (локальный)');
+            loadUserSessions();
             
-            if (userIP === "171.33.254.90") {
-                isAdmin = true;
-                adminControls.style.display = 'flex';
-                updateDebugInfo('Режим: Админ');
-                loadUserSessions();
-            } else {
-                isAdmin = false;
-                currentSessionId = generateSessionId();
-                startUserSession();
-                updateDebugInfo('Режим: Пользователь');
-            }
+            // Создаем сессию для текущего пользователя
+            currentSessionId = generateSessionId();
+            startUserSession();
         }
 
         // Запуск сессии пользователя
         function startUserSession() {
-            if (!database) {
-                showNotification('Ошибка: Firebase не доступен');
-                return;
-            }
-
             const sessionData = {
                 createdAt: Date.now(),
                 lastActivity: Date.now(),
@@ -684,83 +642,88 @@
                 userAgent: navigator.userAgent
             };
 
-            // Сохраняем сессию
-            database.ref('sessions/' + currentSessionId).set(sessionData)
-                .then(() => {
-                    console.log('Сессия создана:', currentSessionId);
-                    updateConnectionStatus('Подключено');
-                })
-                .catch((error) => {
-                    console.error('Ошибка создания сессии:', error);
-                    updateConnectionStatus('Ошибка подключения', true);
-                });
+            // Сохраняем сессию в localStorage
+            saveSession(sessionData);
+            console.log('Сессия создана:', currentSessionId);
+            updateConnectionStatus('Локальный режим');
 
-            // Слушаем сообщения
-            database.ref('messages/' + currentSessionId).on('child_added', (snapshot) => {
-                const message = snapshot.val();
-                if (message && !isMessageDisplayed(message.id)) {
-                    displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
-                }
-            });
+            // Загружаем историю сообщений
+            loadMessages();
+        }
 
-            // Обновляем активность каждые 30 сек
-            setInterval(() => {
-                if (database && currentSessionId) {
-                    database.ref('sessions/' + currentSessionId).update({
-                        lastActivity: Date.now()
-                    });
-                }
-            }, 30000);
+        // Сохранение сессии
+        function saveSession(sessionData) {
+            const sessions = getSessions();
+            sessions[currentSessionId] = sessionData;
+            localStorage.setItem('chat_sessions', JSON.stringify(sessions));
+        }
+
+        // Получение всех сессий
+        function getSessions() {
+            return JSON.parse(localStorage.getItem('chat_sessions') || '{}');
+        }
+
+        // Сохранение сообщения
+        function saveMessage(messageData) {
+            const messages = getMessages(currentSessionId);
+            messages.push(messageData);
+            localStorage.setItem(`messages_${currentSessionId}`, JSON.stringify(messages));
+        }
+
+        // Получение сообщений сессии
+        function getMessages(sessionId) {
+            return JSON.parse(localStorage.getItem(`messages_${sessionId}`) || '[]');
         }
 
         // Загрузка сессий пользователей для админа
         function loadUserSessions() {
-            if (!database) return;
+            const sessions = getSessions();
+            userList.innerHTML = '';
 
-            database.ref('sessions').on('value', (snapshot) => {
-                const sessions = snapshot.val();
-                userList.innerHTML = '';
+            if (Object.keys(sessions).length > 0) {
+                Object.keys(sessions).forEach(sessionId => {
+                    const session = sessions[sessionId];
+                    const isActive = (Date.now() - session.lastActivity) < 120000;
 
-                if (sessions) {
-                    Object.keys(sessions).forEach(sessionId => {
-                        const session = sessions[sessionId];
-                        const isActive = (Date.now() - session.lastActivity) < 120000; // 2 минуты
-
-                        const userItem = document.createElement('div');
-                        userItem.classList.add('user-item');
-                        
-                        const statusClass = isActive ? 'status-online' : 'status-offline';
-                        const statusText = isActive ? 'Online' : 'Offline';
-                        
-                        userItem.innerHTML = `
-                            <span class="status-indicator ${statusClass}"></span>
-                            ${sessionId} (${statusText})
-                            <br><small>Создана: ${new Date(session.createdAt).toLocaleString()}</small>
-                        `;
-                        
-                        userItem.setAttribute('data-session', sessionId);
-                        
-                        userItem.addEventListener('click', function() {
-                            document.querySelectorAll('.user-item').forEach(item => {
-                                item.classList.remove('selected');
-                            });
-                            this.classList.add('selected');
-                            selectedSessionId = sessionId;
-                            updateDebugInfo('Выбрана сессия: ' + sessionId);
+                    const userItem = document.createElement('div');
+                    userItem.classList.add('user-item');
+                    
+                    const statusClass = isActive ? 'status-online' : 'status-offline';
+                    const statusText = isActive ? 'Online' : 'Offline';
+                    
+                    userItem.innerHTML = `
+                        <span class="status-indicator ${statusClass}"></span>
+                        ${sessionId} (${statusText})
+                        <br><small>Создана: ${new Date(session.createdAt).toLocaleString()}</small>
+                    `;
+                    
+                    userItem.setAttribute('data-session', sessionId);
+                    
+                    userItem.addEventListener('click', function() {
+                        document.querySelectorAll('.user-item').forEach(item => {
+                            item.classList.remove('selected');
                         });
-                        
-                        userList.appendChild(userItem);
+                        this.classList.add('selected');
+                        selectedSessionId = sessionId;
+                        updateDebugInfo('Выбрана сессия: ' + sessionId);
                     });
-                    updateDebugInfo(`Загружено сессий: ${Object.keys(sessions).length}`);
-                } else {
-                    userList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Нет активных пользователей</div>';
-                }
-            });
+                    
+                    userList.appendChild(userItem);
+                });
+                updateDebugInfo(`Локальных сессий: ${Object.keys(sessions).length}`);
+            } else {
+                userList.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">Нет сохраненных сессий</div>';
+            }
         }
 
-        // Проверка отображения сообщения
-        function isMessageDisplayed(messageId) {
-            return document.querySelector(`[data-message-id="${messageId}"]`) !== null;
+        // Загрузка сообщений
+        function loadMessages() {
+            const messages = getMessages(currentSessionId);
+            chatContainer.innerHTML = '';
+            
+            messages.forEach(message => {
+                displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
+            });
         }
 
         // Отправка сообщения
@@ -768,19 +731,13 @@
             const messageText = messageInput.value.trim();
             if (messageText === '') return;
 
-            if (!database) {
-                showNotification('Ошибка: База данных не доступна');
-                return;
-            }
-
             // Активируем чат при первом сообщении
             if (!isChatActive) {
                 activateChat();
             }
 
-            const messageId = 'msg_' + Date.now();
             const messageData = {
-                id: messageId,
+                id: 'msg_' + Date.now(),
                 text: messageText,
                 sender: 'user',
                 timestamp: Date.now(),
@@ -801,39 +758,40 @@
             }
 
             // Сохраняем сообщение
-            database.ref('messages/' + targetSession).push(messageData)
-                .then(() => {
-                    console.log('Сообщение отправлено в сессию:', targetSession);
-                    
-                    // Показываем сообщение локально
-                    if (isAdmin) {
-                        displayMessage(messageText, 'ai', Date.now(), true);
-                        showNotification('Сообщение отправлено пользователю');
-                    } else {
-                        displayMessage(messageText, 'user', Date.now(), false);
-                        
-                        // Обновляем активность
-                        database.ref('sessions/' + targetSession).update({
-                            lastActivity: Date.now()
-                        });
+            saveMessage(messageData);
+            console.log('Сообщение сохранено в сессию:', targetSession);
+            
+            // Показываем сообщение локально
+            if (isAdmin) {
+                displayMessage(messageText, 'ai', Date.now(), true);
+                showNotification('Сообщение сохранено');
+            } else {
+                displayMessage(messageText, 'user', Date.now(), false);
+                
+                // Обновляем активность
+                updateSessionActivity(targetSession);
 
-                        // Показываем индикатор
-                        showTypingIndicator();
+                // Показываем индикатор
+                showTypingIndicator();
 
-                        // Авто-ответ ИИ если включен
-                        if (isAIEnabled) {
-                            setTimeout(() => {
-                                generateAIResponse(messageText, targetSession);
-                            }, 2000);
-                        }
-                    }
-                })
-                .catch((error) => {
-                    console.error('Ошибка отправки:', error);
-                    showNotification('Ошибка отправки сообщения');
-                });
+                // Авто-ответ ИИ если включен
+                if (isAIEnabled) {
+                    setTimeout(() => {
+                        generateAIResponse(messageText, targetSession);
+                    }, 2000);
+                }
+            }
 
             messageInput.value = '';
+        }
+
+        // Обновление активности сессии
+        function updateSessionActivity(sessionId) {
+            const sessions = getSessions();
+            if (sessions[sessionId]) {
+                sessions[sessionId].lastActivity = Date.now();
+                localStorage.setItem('chat_sessions', JSON.stringify(sessions));
+            }
         }
 
         // Генерация ответа ИИ
@@ -845,26 +803,25 @@
                 "Спасибо за ваш запрос. Я анализирую информацию...",
                 "На основе моих знаний, я могу предложить следующее...",
                 "Это сложный вопрос. Давайте разберем его по частям.",
-                "Я нашел несколько решений для вашей проблемы."
+                "Я нашел несколько решений для вашей проблемы.",
+                "Отличный вопрос! Давайте углубимся в эту тему.",
+                "Интересно! У меня есть несколько мыслей по этому поводу.",
+                "Спасибо за обращение. Вот что я могу предложить..."
             ];
 
             const response = responses[Math.floor(Math.random() * responses.length)];
-            const messageId = 'msg_' + Date.now();
             const messageData = {
-                id: messageId,
+                id: 'msg_' + Date.now(),
                 text: response,
                 sender: 'ai',
                 timestamp: Date.now(),
                 isAdmin: false
             };
 
-            database.ref('messages/' + sessionId).push(messageData)
-                .then(() => {
-                    console.log('Ответ ИИ отправлен');
-                })
-                .catch((error) => {
-                    console.error('Ошибка отправки ответа ИИ:', error);
-                });
+            // Сохраняем ответ ИИ
+            saveMessage(messageData);
+            displayMessage(response, 'ai', Date.now(), false);
+            console.log('Ответ ИИ сохранен');
         }
 
         // Показать индикатор набора
@@ -920,21 +877,16 @@
             chatContainer.innerHTML = '';
         }
 
+        // Обновление статуса соединения
+        function updateConnectionStatus(message) {
+            connectionStatus.textContent = message;
+            connectionStatus.style.background = '#4CAF50';
+        }
+
         // Инициализация приложения
         function init() {
-            if (database) {
-                // Проверяем соединение с Firebase
-                database.ref('.info/connected').on('value', (snapshot) => {
-                    if (snapshot.val() === true) {
-                        updateConnectionStatus('Firebase подключен');
-                        checkIP();
-                    } else {
-                        updateConnectionStatus('Firebase отключен', true);
-                    }
-                });
-            } else {
-                updateConnectionStatus('Firebase не инициализирован', true);
-            }
+            updateConnectionStatus('Локальный чат готов');
+            checkIP();
         }
 
         // Обработчики событий
@@ -962,6 +914,7 @@
         });
 
         selectUserBtn.addEventListener('click', () => {
+            loadUserSessions();
             document.getElementById('userSelectModal').style.display = 'flex';
         });
 
@@ -974,19 +927,17 @@
                 document.getElementById('userSelectModal').style.display = 'none';
                 
                 // Загружаем историю сообщений выбранного пользователя
-                database.ref('messages/' + selectedSessionId).once('value').then((snapshot) => {
-                    chatContainer.innerHTML = '';
-                    const messages = snapshot.val();
-                    
-                    if (messages) {
-                        Object.values(messages).forEach(message => {
-                            displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
-                        });
-                    }
-                    
-                    activateChat();
-                    showNotification('Чат пользователя загружен');
-                });
+                const messages = getMessages(selectedSessionId);
+                chatContainer.innerHTML = '';
+                
+                if (messages.length > 0) {
+                    messages.forEach(message => {
+                        displayMessage(message.text, message.sender, message.timestamp, message.isAdmin);
+                    });
+                }
+                
+                activateChat();
+                showNotification('Чат пользователя загружен');
             } else {
                 showNotification('Выберите пользователя!');
             }
