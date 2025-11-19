@@ -69,6 +69,15 @@
             box-shadow: 0 8px 25px rgba(0, 200, 83, 0.6);
         }
 
+        .admin-btn.delete-btn {
+            background: linear-gradient(135deg, #f44336, #d32f2f);
+            box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
+        }
+
+        .admin-btn.delete-btn:hover {
+            box-shadow: 0 8px 25px rgba(244, 67, 54, 0.6);
+        }
+
         .header {
             text-align: center;
             padding: 30px 20px;
@@ -483,7 +492,7 @@
             border-radius: 25px;
             padding: 30px;
             width: 90%;
-            max-width: 600px;
+            max-width: 700px;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.1);
             max-height: 80vh;
@@ -539,6 +548,7 @@
             cursor: pointer;
             transition: all 0.3s ease;
             border: 1px solid transparent;
+            position: relative;
         }
 
         .user-item:hover {
@@ -559,6 +569,30 @@
             animation: pulse-glow 2s infinite;
         }
 
+        .user-item-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+
+        .delete-user-btn {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid rgba(244, 67, 54, 0.4);
+            color: #f44336;
+            border-radius: 5px;
+            padding: 4px 8px;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .delete-user-btn:hover {
+            background: rgba(244, 67, 54, 0.4);
+            transform: scale(1.1);
+        }
+
         @keyframes pulse-glow {
             0%, 100% { box-shadow: 0 0 10px rgba(255, 152, 0, 0.3); }
             50% { box-shadow: 0 0 20px rgba(255, 152, 0, 0.6); }
@@ -566,8 +600,13 @@
 
         .modal-buttons {
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
             margin-top: 20px;
+            gap: 10px;
+        }
+
+        .modal-left-buttons {
+            display: flex;
             gap: 10px;
         }
 
@@ -665,6 +704,7 @@
         }
 
         .debug-info {
+            display: none;
             position: fixed;
             bottom: 10px;
             right: 10px;
@@ -679,6 +719,7 @@
         }
 
         .connection-status {
+            display: none;
             position: fixed;
             top: 10px;
             left: 10px;
@@ -771,13 +812,10 @@
         <button class="admin-btn" id="enableAIBtn">
             <i class="fas fa-robot"></i> Enable AI
         </button>
-        <button class="admin-btn" id="refreshBtn">
-            <i class="fas fa-sync-alt"></i> Обновить
-        </button>
     </div>
 
     <div class="admin-input" id="adminInputContainer">
-        <input type="text" class="message-input" id="adminMessageInput" placeholder="Ответ пользователю...">
+        <input type="text" class="message-input" id="adminMessageInput" placeholder="Ответ пользователю от имени Parallax AI...">
         <button class="send-btn" id="adminSendBtn">
             <i class="fas fa-paper-plane"></i>
         </button>
@@ -842,16 +880,30 @@
                 </div>
             </div>
             <div class="modal-buttons">
-                <button class="modal-btn modal-cancel" id="modalCancel">Отмена</button>
-                <button class="modal-btn modal-ok" id="modalOk">Выбрать</button>
+                <div class="modal-left-buttons">
+                    <button class="modal-btn modal-cancel" id="modalCancel">
+                        <i class="fas fa-times"></i> Отмена
+                    </button>
+                    <button class="admin-btn delete-btn" id="deleteUserBtn" style="display: none;">
+                        <i class="fas fa-trash"></i> Удалить
+                    </button>
+                </div>
+                <div>
+                    <button class="admin-btn" id="refreshUsersBtn">
+                        <i class="fas fa-sync-alt"></i> Обновить
+                    </button>
+                    <button class="modal-btn modal-ok" id="modalOk">
+                        <i class="fas fa-check"></i> Выбрать
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Конфигурация API
-        const API_BASE = '/api';
+        // Конфигурация
         const ADMIN_IPS = ['171.33.254.90', '127.0.0.1', 'localhost'];
+        const SESSION_TIMEOUT = 300000; // 5 минут
 
         // Переменные состояния
         let currentSessionId = null;
@@ -860,7 +912,8 @@
         let isAIEnabled = false;
         let isChatActive = false;
         let userSessions = [];
-        let pendingMessages = [];
+        let pendingMessages = new Map(); // Map для хранения ожидающих сообщений по sessionId
+        let currentUserIP = 'unknown';
 
         // Элементы DOM
         const elements = {
@@ -879,7 +932,10 @@
             pendingUsersList: document.getElementById('pendingUsersList'),
             enableAIBtn: document.getElementById('enableAIBtn'),
             selectUserBtn: document.getElementById('selectUserBtn'),
-            refreshBtn: document.getElementById('refreshBtn')
+            refreshUsersBtn: document.getElementById('refreshUsersBtn'),
+            deleteUserBtn: document.getElementById('deleteUserBtn'),
+            modalOk: document.getElementById('modalOk'),
+            modalCancel: document.getElementById('modalCancel')
         };
 
         // Показать уведомление
@@ -901,17 +957,27 @@
             }, 3000);
         }
 
-        // Обновление отладочной информации
+        // Обновление отладочной информации (только для админа)
         function updateDebugInfo(message) {
-            elements.debugInfo.textContent = `${new Date().toLocaleTimeString()} | ${message}`;
+            if (isAdmin) {
+                elements.debugInfo.style.display = 'block';
+                elements.debugInfo.textContent = `${new Date().toLocaleTimeString()} | ${message}`;
+            } else {
+                elements.debugInfo.style.display = 'none';
+            }
         }
 
-        // Обновление статуса соединения
+        // Обновление статуса соединения (только для админа)
         function updateConnectionStatus(message, isError = false) {
-            elements.connectionStatus.textContent = message;
-            elements.connectionStatus.style.background = isError ? 
-                'linear-gradient(135deg, #f44336, #d32f2f)' : 
-                'linear-gradient(135deg, #4CAF50, #45a049)';
+            if (isAdmin) {
+                elements.connectionStatus.style.display = 'block';
+                elements.connectionStatus.textContent = message;
+                elements.connectionStatus.style.background = isError ? 
+                    'linear-gradient(135deg, #f44336, #d32f2f)' : 
+                    'linear-gradient(135deg, #4CAF50, #45a049)';
+            } else {
+                elements.connectionStatus.style.display = 'none';
+            }
         }
 
         // Генерация ID сессии
@@ -931,33 +997,62 @@
             }
         }
 
+        // Сохранение сессий в localStorage
+        function saveSessionsToStorage() {
+            if (isAdmin) {
+                localStorage.setItem('parallax_sessions', JSON.stringify(userSessions));
+            }
+        }
+
+        // Загрузка сессий из localStorage
+        function loadSessionsFromStorage() {
+            if (isAdmin) {
+                const saved = localStorage.getItem('parallax_sessions');
+                if (saved) {
+                    userSessions = JSON.parse(saved);
+                    updateDebugInfo(`Загружено сессий из хранилища: ${userSessions.length}`);
+                }
+            }
+        }
+
         // Проверка IP и инициализация
         async function checkIPAndInit() {
             try {
                 updateConnectionStatus('Проверка IP...');
-                const userIP = await getUserIP();
+                currentUserIP = await getUserIP();
                 
                 // Проверяем, является ли пользователь админом
-                isAdmin = ADMIN_IPS.includes(userIP);
+                isAdmin = ADMIN_IPS.includes(currentUserIP);
                 
                 if (isAdmin) {
                     elements.adminControls.style.display = 'flex';
                     showNotification('Режим администратора активирован', 'success');
-                    updateDebugInfo(`IP: ${userIP} | Режим: Админ`);
+                    updateDebugInfo(`IP: ${currentUserIP} | Режим: Админ`);
+                    loadSessionsFromStorage();
                 } else {
                     elements.adminControls.style.display = 'none';
-                    updateDebugInfo(`IP: ${userIP} | Режим: Пользователь`);
+                    updateDebugInfo(`IP: ${currentUserIP} | Режим: Пользователь`);
                 }
                 
                 // Создаем сессию для текущего пользователя
                 currentSessionId = generateSessionId();
+                
+                // Если пользователь не админ, добавляем его сессию
+                if (!isAdmin) {
+                    const userSession = {
+                        id: currentSessionId,
+                        ip_address: currentUserIP,
+                        created_at: new Date().toISOString(),
+                        last_activity: new Date().toISOString(),
+                        hasPendingAI: false,
+                        messages: []
+                    };
+                    userSessions.push(userSession);
+                    saveSessionsToStorage();
+                }
+                
                 updateConnectionStatus('Подключено');
                 updateDebugInfo(`Сессия: ${currentSessionId}`);
-                
-                // Загружаем демо-сообщения для админа
-                if (isAdmin) {
-                    loadDemoSessions();
-                }
                 
                 showNotification('Parallax AI готов к работе!');
                 
@@ -970,58 +1065,33 @@
                 currentSessionId = generateSessionId();
                 isAdmin = true;
                 elements.adminControls.style.display = 'flex';
-                loadDemoSessions();
+                loadSessionsFromStorage();
                 showNotification('Работаем в локальном режиме', 'warning');
             }
         }
 
-        // Загрузка демо-сессий для админа
-        function loadDemoSessions() {
-            userSessions = [
-                {
-                    id: 'user_demo_1',
-                    ip_address: '192.168.1.100',
-                    created_at: new Date(Date.now() - 300000).toISOString(),
-                    last_activity: new Date(Date.now() - 60000).toISOString(),
-                    hasPendingAI: true,
-                    messages: [
-                        { text: "Привет! У меня вопрос по поводу оплаты", sender: 'user', time: Date.now() - 120000 },
-                        { text: "Здравствуйте! Расскажите подробнее о вашей проблеме", sender: 'ai', time: Date.now() - 90000, isAI: true }
-                    ]
-                },
-                {
-                    id: 'user_demo_2',
-                    ip_address: '192.168.1.101',
-                    created_at: new Date(Date.now() - 600000).toISOString(),
-                    last_activity: new Date(Date.now() - 120000).toISOString(),
-                    hasPendingAI: false,
-                    messages: [
-                        { text: "Как работает ваш ИИ?", sender: 'user', time: Date.now() - 300000 },
-                        { text: "Наш ИИ использует передовые технологии машинного обучения", sender: 'ai', time: Date.now() - 270000, isAI: true }
-                    ]
-                },
-                {
-                    id: 'user_demo_3',
-                    ip_address: '192.168.1.102',
-                    created_at: new Date(Date.now() - 900000).toISOString(),
-                    last_activity: new Date(Date.now() - 300000).toISOString(),
-                    hasPendingAI: true,
-                    messages: [
-                        { text: "Мне нужна помощь с настройкой", sender: 'user', time: Date.now() - 480000 },
-                        { text: "Конечно, помогу вам с настройкой. Что именно не получается?", sender: 'ai', time: Date.now() - 450000, isAI: true }
-                    ]
-                }
-            ];
-            updateDebugInfo(`Загружено демо-сессий: ${userSessions.length}`);
+        // Обновление активности сессии
+        function updateSessionActivity(sessionId) {
+            const session = userSessions.find(s => s.id === sessionId);
+            if (session) {
+                session.last_activity = new Date().toISOString();
+                saveSessionsToStorage();
+            }
         }
 
         // Загрузка сессий пользователей для админа
-        async function loadUserSessions() {
+        function loadUserSessions() {
             try {
                 elements.userList.innerHTML = '<div class="empty-state">Загрузка...</div>';
                 elements.pendingUsersList.innerHTML = '<div class="empty-state">Загрузка...</div>';
 
-                // Имитация загрузки с сервера
+                // Очищаем устаревшие сессии
+                const now = Date.now();
+                userSessions = userSessions.filter(session => {
+                    const lastActivity = new Date(session.last_activity).getTime();
+                    return (now - lastActivity) < SESSION_TIMEOUT;
+                });
+
                 setTimeout(() => {
                     let hasRegularUsers = false;
                     let hasPendingUsers = false;
@@ -1030,6 +1100,9 @@
                     elements.pendingUsersList.innerHTML = '';
 
                     userSessions.forEach(session => {
+                        // Пропускаем текущую сессию админа
+                        if (session.id === currentSessionId && isAdmin) return;
+                        
                         const userItem = document.createElement('div');
                         userItem.classList.add('user-item');
                         
@@ -1055,6 +1128,11 @@
                                 IP: ${session.ip_address} | 
                                 Активность: ${new Date(session.last_activity).toLocaleTimeString()}
                             </div>
+                            <div class="user-item-actions">
+                                <button class="delete-user-btn" onclick="event.stopPropagation(); deleteUserSession('${session.id}')">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
                         `;
                         
                         userItem.setAttribute('data-session', session.id);
@@ -1066,6 +1144,9 @@
                             this.classList.add('selected');
                             selectedSessionId = session.id;
                             updateDebugInfo('Выбрана сессия: ' + session.id);
+                            
+                            // Показываем кнопку удаления
+                            elements.deleteUserBtn.style.display = 'block';
                             
                             // Показываем поле ввода для админа
                             elements.adminInputContainer.style.display = 'flex';
@@ -1086,15 +1167,29 @@
                         elements.pendingUsersList.innerHTML = '<div class="empty-state">Нет пользователей, ожидающих ответа</div>';
                     }
                     
-                    showNotification('Список пользователей обновлен');
+                    showNotification(`Обновлено: ${userSessions.length} пользователей`);
                     
-                }, 1000);
+                }, 500);
                 
             } catch (error) {
                 console.error('Ошибка загрузки сессий:', error);
                 elements.userList.innerHTML = '<div class="empty-state">Ошибка загрузки</div>';
                 elements.pendingUsersList.innerHTML = '<div class="empty-state">Ошибка загрузки</div>';
                 showNotification('Ошибка загрузки пользователей', 'error');
+            }
+        }
+
+        // Удаление сессии пользователя
+        function deleteUserSession(sessionId) {
+            userSessions = userSessions.filter(session => session.id !== sessionId);
+            saveSessionsToStorage();
+            loadUserSessions();
+            showNotification('Пользователь удален', 'success');
+            
+            if (selectedSessionId === sessionId) {
+                selectedSessionId = null;
+                elements.adminInputContainer.style.display = 'none';
+                elements.deleteUserBtn.style.display = 'none';
             }
         }
 
@@ -1108,36 +1203,60 @@
             }
 
             try {
+                // Обновляем активность
+                updateSessionActivity(currentSessionId);
+                
                 // Локальное отображение сообщения
                 displayMessage(messageText, 'user', Date.now());
                 elements.messageInput.value = '';
                 
-                if (isAIEnabled) {
-                    // Если ИИ включен - сразу отвечаем
+                // Добавляем сообщение в историю
+                const session = userSessions.find(s => s.id === currentSessionId);
+                if (session) {
+                    if (!session.messages) session.messages = [];
+                    session.messages.push({
+                        text: messageText,
+                        sender: 'user',
+                        time: Date.now()
+                    });
+                    saveSessionsToStorage();
+                }
+                
+                if (isAIEnabled && isAdmin) {
+                    // Если ИИ включен админом - сразу отвечаем
                     showTypingIndicator();
                     
                     setTimeout(() => {
                         hideTypingIndicator();
                         const aiResponse = generateAIResponse(messageText);
                         displayAIResponse(aiResponse, Date.now());
+                        
+                        // Сохраняем ответ в историю
+                        if (session) {
+                            session.messages.push({
+                                text: aiResponse,
+                                sender: 'ai',
+                                time: Date.now(),
+                                isAI: true
+                            });
+                            saveSessionsToStorage();
+                        }
                     }, 2000);
                 } else {
                     // Если ИИ выключен - показываем "Генерирую..." пока админ не ответит
                     showTypingIndicator();
                     
                     // Добавляем сообщение в очередь ожидающих
-                    pendingMessages.push({
-                        sessionId: currentSessionId,
+                    pendingMessages.set(currentSessionId, {
                         text: messageText,
                         timestamp: Date.now()
                     });
                     
                     // Помечаем сессию как ожидающую ответа
-                    if (isAdmin) {
-                        const session = userSessions.find(s => s.id === currentSessionId);
-                        if (session) {
-                            session.hasPendingAI = true;
-                        }
+                    const session = userSessions.find(s => s.id === currentSessionId);
+                    if (session) {
+                        session.hasPendingAI = true;
+                        saveSessionsToStorage();
                     }
                 }
                 
@@ -1196,24 +1315,40 @@
             }
 
             try {
-                // Скрываем индикатор "Генерирую..."
-                hideTypingIndicator();
+                // Скрываем индикатор "Генерирую..." для выбранного пользователя
+                if (selectedSessionId === currentSessionId) {
+                    hideTypingIndicator();
+                }
                 
                 // Отображаем сообщение как ответ от Parallax AI
                 if (selectedSessionId === currentSessionId) {
                     displayAIResponse(messageText, Date.now());
                 }
                 
+                // Сохраняем ответ в историю
+                const session = userSessions.find(s => s.id === selectedSessionId);
+                if (session) {
+                    if (!session.messages) session.messages = [];
+                    session.messages.push({
+                        text: messageText,
+                        sender: 'ai',
+                        time: Date.now(),
+                        isAI: true
+                    });
+                    saveSessionsToStorage();
+                }
+                
                 elements.adminMessageInput.value = '';
                 
                 // Убираем флаг ожидания ИИ
-                const session = userSessions.find(s => s.id === selectedSessionId);
-                if (session) {
-                    session.hasPendingAI = false;
+                const sessionToUpdate = userSessions.find(s => s.id === selectedSessionId);
+                if (sessionToUpdate) {
+                    sessionToUpdate.hasPendingAI = false;
+                    saveSessionsToStorage();
                 }
                 
                 // Убираем сообщение из очереди ожидающих
-                pendingMessages = pendingMessages.filter(msg => msg.sessionId !== selectedSessionId);
+                pendingMessages.delete(selectedSessionId);
                 
                 showNotification('Ответ отправлен от имени Parallax AI');
                 
@@ -1310,6 +1445,7 @@
             elements.chatContainer.innerHTML = '';
             elements.adminInputContainer.style.display = 'none';
             selectedSessionId = null;
+            elements.deleteUserBtn.style.display = 'none';
             hideTypingIndicator();
         }
 
@@ -1356,17 +1492,24 @@
             document.getElementById('userSelectModal').style.display = 'flex';
         });
 
-        elements.refreshBtn.addEventListener('click', () => {
+        elements.refreshUsersBtn.addEventListener('click', () => {
             loadUserSessions();
         });
 
-        document.getElementById('modalCancel').addEventListener('click', () => {
+        elements.deleteUserBtn.addEventListener('click', () => {
+            if (selectedSessionId) {
+                deleteUserSession(selectedSessionId);
+            }
+        });
+
+        elements.modalCancel.addEventListener('click', () => {
             document.getElementById('userSelectModal').style.display = 'none';
             elements.adminInputContainer.style.display = 'none';
             selectedSessionId = null;
+            elements.deleteUserBtn.style.display = 'none';
         });
 
-        document.getElementById('modalOk').addEventListener('click', () => {
+        elements.modalOk.addEventListener('click', () => {
             if (selectedSessionId) {
                 document.getElementById('userSelectModal').style.display = 'none';
                 
@@ -1391,6 +1534,9 @@
 
         // Запуск приложения
         window.onload = init;
+
+        // Глобальные функции
+        window.deleteUserSession = deleteUserSession;
     </script>
 </body>
 </html>
