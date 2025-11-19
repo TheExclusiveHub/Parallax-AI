@@ -6,39 +6,9 @@
     <title>Parallax AI</title>
     
     <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-        import { getFirestore, collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp, getDocs, updateDoc, doc } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyCPpQIiE0XgTk7lUkm9xWhZ7aHBhJTxX-Y",
-            authDomain: "parallax-ai-baff3.firebaseapp.com",
-            projectId: "parallax-ai-baff3",
-            storageBucket: "parallax-ai-baff3.firebasestorage.app",
-            messagingSenderId: "386155070564",
-            appId: "1:386155070564:web:12fdf1880599e4365b4b71"
-        };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        
-        // Make Firebase available globally
-        window.firebase = {
-            db,
-            collection,
-            addDoc,
-            query,
-            where,
-            orderBy,
-            onSnapshot,
-            serverTimestamp,
-            getDocs,
-            updateDoc,
-            doc
-        };
-    </script>
-
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -814,7 +784,21 @@
     </div>
 
     <script>
-        // Конфигурация
+        // Конфигурация Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCPpQIiE0XgTk7lUkm9xWhZ7aHBhJTxX-Y",
+            authDomain: "parallax-ai-baff3.firebaseapp.com",
+            projectId: "parallax-ai-baff3",
+            storageBucket: "parallax-ai-baff3.firebasestorage.app",
+            messagingSenderId: "386155070564",
+            appId: "1:386155070564:web:12fdf1880599e4365b4b71"
+        };
+
+        // Инициализация Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Конфигурация приложения
         const ADMIN_IPS = ['171.33.254.90', '127.0.0.1', 'localhost'];
         const SESSION_TIMEOUT = 120000; // 2 minutes
 
@@ -920,20 +904,17 @@
         async function startUserSession(userIP) {
             try {
                 // Сохраняем сессию в Firebase
-                await window.firebase.addDoc(window.firebase.collection(window.firebase.db, 'sessions'), {
+                await db.collection('sessions').add({
                     id: currentSessionId,
                     ip_address: userIP,
-                    created_at: window.firebase.serverTimestamp(),
-                    last_activity: window.firebase.serverTimestamp(),
+                    created_at: firebase.firestore.FieldValue.serverTimestamp(),
+                    last_activity: firebase.firestore.FieldValue.serverTimestamp(),
                     is_admin: isAdmin
                 });
                 
                 updateConnectionStatus('Подключено к Firebase');
                 
                 // Загружаем историю сообщений
-                loadMessages();
-                
-                // Запускаем слушатель сообщений в реальном времени
                 setupMessageListener();
                 
                 // Запускаем проверку ожидающих ответов ИИ
@@ -944,6 +925,7 @@
             } catch (error) {
                 console.error('Ошибка создания сессии:', error);
                 updateConnectionStatus('Ошибка Firebase');
+                showNotification('Ошибка подключения к базе данных', 'error');
             }
         }
 
@@ -953,39 +935,37 @@
                 messageListener(); // Отписываемся от предыдущего слушателя
             }
 
-            const q = window.firebase.query(
-                window.firebase.collection(window.firebase.db, 'messages'),
-                window.firebase.where('sessionId', '==', currentSessionId),
-                window.firebase.orderBy('created_at', 'asc')
-            );
-
-            messageListener = window.firebase.onSnapshot(q, (snapshot) => {
-                chatContainer.innerHTML = '';
-                snapshot.forEach((doc) => {
-                    const msg = doc.data();
-                    displayMessage(
-                        msg.text, 
-                        msg.sender, 
-                        msg.created_at?.toDate().getTime() || Date.now(), 
-                        msg.is_admin || false
-                    );
+            messageListener = db.collection('messages')
+                .where('sessionId', '==', currentSessionId)
+                .orderBy('created_at', 'asc')
+                .onSnapshot((snapshot) => {
+                    chatContainer.innerHTML = '';
+                    snapshot.forEach((doc) => {
+                        const msg = doc.data();
+                        displayMessage(
+                            msg.text, 
+                            msg.sender, 
+                            msg.created_at?.toDate().getTime() || Date.now(), 
+                            msg.is_admin || false
+                        );
+                    });
+                    
+                    // Если есть ожидающие ИИ сообщения, показываем индикатор
+                    checkAIPendingStatus();
+                }, (error) => {
+                    console.error('Ошибка слушателя сообщений:', error);
+                    showNotification('Ошибка загрузки сообщений', 'error');
                 });
-                
-                // Если есть ожидающие ИИ сообщения, показываем индикатор
-                checkAIPendingStatus();
-            });
         }
 
         // Проверка статуса ожидания ИИ
         async function checkAIPendingStatus() {
             try {
-                const q = window.firebase.query(
-                    window.firebase.collection(window.firebase.db, 'messages'),
-                    window.firebase.where('sessionId', '==', currentSessionId),
-                    window.firebase.where('needsAiResponse', '==', true)
-                );
+                const snapshot = await db.collection('messages')
+                    .where('sessionId', '==', currentSessionId)
+                    .where('needsAiResponse', '==', true)
+                    .get();
                 
-                const snapshot = await window.firebase.getDocs(q);
                 const hasPending = !snapshot.empty;
                 
                 if (hasPending && !isTypingIndicatorVisible()) {
@@ -1011,12 +991,9 @@
         // Загрузка сессий пользователей для админа
         async function loadUserSessions() {
             try {
-                const q = window.firebase.query(
-                    window.firebase.collection(window.firebase.db, 'sessions'),
-                    window.firebase.orderBy('created_at', 'desc')
-                );
-                
-                const snapshot = await window.firebase.getDocs(q);
+                const snapshot = await db.collection('sessions')
+                    .orderBy('created_at', 'desc')
+                    .get();
                 
                 userList.innerHTML = '';
                 pendingUsersList.innerHTML = '';
@@ -1028,13 +1005,11 @@
                     const session = doc.data();
                     
                     // Проверяем есть ли ожидающие ИИ сообщения
-                    const messagesQuery = window.firebase.query(
-                        window.firebase.collection(window.firebase.db, 'messages'),
-                        window.firebase.where('sessionId', '==', session.id),
-                        window.firebase.where('needsAiResponse', '==', true)
-                    );
+                    const messagesSnapshot = await db.collection('messages')
+                        .where('sessionId', '==', session.id)
+                        .where('needsAiResponse', '==', true)
+                        .get();
                     
-                    const messagesSnapshot = await window.firebase.getDocs(messagesQuery);
                     const hasPendingAI = !messagesSnapshot.empty;
 
                     const isActive = (Date.now() - (session.last_activity?.toDate().getTime() || Date.now())) < SESSION_TIMEOUT;
@@ -1103,37 +1078,6 @@
             }
         }
 
-        // Загрузка сообщений
-        async function loadMessages() {
-            try {
-                const q = window.firebase.query(
-                    window.firebase.collection(window.firebase.db, 'messages'),
-                    window.firebase.where('sessionId', '==', currentSessionId),
-                    window.firebase.orderBy('created_at', 'asc')
-                );
-                
-                const snapshot = await window.firebase.getDocs(q);
-                chatContainer.innerHTML = '';
-                
-                snapshot.forEach((doc) => {
-                    const msg = doc.data();
-                    displayMessage(
-                        msg.text, 
-                        msg.sender, 
-                        msg.created_at?.toDate().getTime() || Date.now(), 
-                        msg.is_admin || false
-                    );
-                });
-                
-                // Проверяем статус ожидания ИИ
-                checkAIPendingStatus();
-                
-            } catch (error) {
-                console.error('Ошибка загрузки сообщений:', error);
-                showNotification('Ошибка загрузки сообщений', 'error');
-            }
-        }
-
         // Отправка сообщения пользователем
         async function sendMessage() {
             const messageText = messageInput.value.trim();
@@ -1144,19 +1088,20 @@
             }
 
             try {
-                await window.firebase.addDoc(window.firebase.collection(window.firebase.db, 'messages'), {
+                await db.collection('messages').add({
                     sessionId: currentSessionId,
                     text: messageText,
                     sender: 'user',
                     is_admin: false,
                     needsAiResponse: true,
-                    created_at: window.firebase.serverTimestamp()
+                    created_at: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
                 // Обновляем время последней активности
                 await updateSessionActivity();
                 
                 messageInput.value = '';
+                showNotification('Сообщение отправлено');
                 
             } catch (error) {
                 console.error('Ошибка отправки:', error);
@@ -1173,13 +1118,13 @@
             }
 
             try {
-                await window.firebase.addDoc(window.firebase.collection(window.firebase.db, 'messages'), {
+                await db.collection('messages').add({
                     sessionId: selectedSessionId,
                     text: messageText,
                     sender: 'admin',
                     is_admin: true,
                     needsAiResponse: false,
-                    created_at: window.firebase.serverTimestamp()
+                    created_at: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
                 adminMessageInput.value = '';
@@ -1194,16 +1139,14 @@
         // Обновление времени активности сессии
         async function updateSessionActivity() {
             try {
-                const sessionsQuery = window.firebase.query(
-                    window.firebase.collection(window.firebase.db, 'sessions'),
-                    window.firebase.where('id', '==', currentSessionId)
-                );
-                
-                const snapshot = await window.firebase.getDocs(sessionsQuery);
+                const snapshot = await db.collection('sessions')
+                    .where('id', '==', currentSessionId)
+                    .get();
+                    
                 if (!snapshot.empty) {
                     const sessionDoc = snapshot.docs[0];
-                    await window.firebase.updateDoc(window.firebase.doc(window.firebase.db, 'sessions', sessionDoc.id), {
-                        last_activity: window.firebase.serverTimestamp()
+                    await db.collection('sessions').doc(sessionDoc.id).update({
+                        last_activity: firebase.firestore.FieldValue.serverTimestamp()
                     });
                 }
             } catch (error) {
@@ -1301,12 +1244,7 @@
 
         // Инициализация приложения
         function init() {
-            // Ждем пока Firebase загрузится
-            if (window.firebase) {
-                checkIPAndInit();
-            } else {
-                setTimeout(init, 100);
-            }
+            checkIPAndInit();
         }
 
         // Обработчики событий
