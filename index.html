@@ -84,25 +84,48 @@
         }
 
         .title {
-            background: linear-gradient(90deg, #8a2be2, #da70d6, #4b0082);
+            background: linear-gradient(90deg, #8a2be2, #da70d6, #4b0082, #ff00ff, #8a2be2);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-            font-size: 3rem;
+            font-size: 3.5rem;
             font-weight: 800;
-            text-shadow: 0 4px 15px rgba(138, 43, 226, 0.3);
+            text-shadow: 
+                0 0 20px rgba(138, 43, 226, 0.7),
+                0 0 40px rgba(138, 43, 226, 0.5),
+                0 0 60px rgba(138, 43, 226, 0.3);
             letter-spacing: -0.5px;
+            animation: titleGlow 3s ease-in-out infinite alternate;
+            background-size: 300% 300%;
+        }
+
+        @keyframes titleGlow {
+            0% {
+                background-position: 0% 50%;
+                text-shadow: 
+                    0 0 20px rgba(138, 43, 226, 0.7),
+                    0 0 40px rgba(138, 43, 226, 0.5),
+                    0 0 60px rgba(138, 43, 226, 0.3);
+            }
+            100% {
+                background-position: 100% 50%;
+                text-shadow: 
+                    0 0 25px rgba(218, 112, 214, 0.8),
+                    0 0 50px rgba(218, 112, 214, 0.6),
+                    0 0 75px rgba(218, 112, 214, 0.4);
+            }
         }
 
         .title-sub {
-            background: linear-gradient(90deg, #da70d6, #9370db);
+            background: linear-gradient(90deg, #da70d6, #9370db, #8a2be2);
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-            font-size: 1.2rem;
+            font-size: 1.3rem;
             font-weight: 300;
-            margin-top: 5px;
+            margin-top: 10px;
             opacity: 0.9;
+            text-shadow: 0 0 10px rgba(218, 112, 214, 0.5);
         }
 
         .welcome-section {
@@ -365,6 +388,28 @@
             align-self: flex-start;
             border-bottom-left-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .ai-response-message {
+            background: linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(75, 0, 130, 0.1));
+            align-self: flex-start;
+            border-bottom-left-radius: 8px;
+            border: 1px solid rgba(138, 43, 226, 0.2);
+            position: relative;
+        }
+
+        .ai-response-message::before {
+            content: 'PARALLAX AI';
+            position: absolute;
+            top: -8px;
+            left: 15px;
+            background: linear-gradient(135deg, #8a2be2, #4b0082);
+            color: white;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-shadow: 0 0 10px rgba(138, 43, 226, 0.5);
         }
 
         .typing-indicator {
@@ -711,68 +756,6 @@
             font-weight: bold;
             margin-left: 8px;
         }
-
-        .ai-response-btn {
-            background: linear-gradient(135deg, #8a2be2, #4b0082);
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            cursor: pointer;
-            margin-top: 10px;
-            transition: all 0.3s ease;
-        }
-
-        .ai-response-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(138, 43, 226, 0.4);
-        }
-
-        .user-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #8a2be2, #4b0082);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 10px;
-            font-size: 0.8rem;
-            font-weight: bold;
-        }
-
-        .ai-avatar {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #4b0082, #8a2be2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 10px;
-            font-size: 0.8rem;
-            font-weight: bold;
-        }
-
-        .message-with-avatar {
-            display: flex;
-            align-items: flex-start;
-            max-width: 85%;
-        }
-
-        .avatar-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin-right: 10px;
-        }
-
-        .avatar-name {
-            font-size: 0.7rem;
-            color: rgba(255, 255, 255, 0.6);
-            margin-top: 4px;
-        }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -813,16 +796,7 @@
             </div>
         </div>
         <div class="welcome-text">Добро пожаловать в Parallax</div>
-        <div class="subtitle">Ваш умный нейросетевой собеседник, готовый помочь с любыми вопросами и задачами. Начните общение прямо сейчас!</div>
-        
-        <div style="margin-top: 30px; display: flex; gap: 15px;">
-            <button class="admin-btn" onclick="startDemoChat()" style="background: linear-gradient(135deg, #00c853, #009624);">
-                <i class="fas fa-play"></i> Начать демо-чат
-            </button>
-            <button class="admin-btn" onclick="showFeatures()" style="background: linear-gradient(135deg, #2196F3, #1976D2);">
-                <i class="fas fa-star"></i> Возможности
-            </button>
-        </div>
+        <div class="subtitle">Ваш умный нейросетевой собеседник, готовый помочь с любыми вопросами и задачами</div>
     </div>
 
     <div class="chat-interface" id="chatInterface">
@@ -886,6 +860,7 @@
         let isAIEnabled = false;
         let isChatActive = false;
         let userSessions = [];
+        let pendingMessages = [];
 
         // Элементы DOM
         const elements = {
@@ -1008,21 +983,33 @@
                     ip_address: '192.168.1.100',
                     created_at: new Date(Date.now() - 300000).toISOString(),
                     last_activity: new Date(Date.now() - 60000).toISOString(),
-                    hasPendingAI: true
+                    hasPendingAI: true,
+                    messages: [
+                        { text: "Привет! У меня вопрос по поводу оплаты", sender: 'user', time: Date.now() - 120000 },
+                        { text: "Здравствуйте! Расскажите подробнее о вашей проблеме", sender: 'ai', time: Date.now() - 90000, isAI: true }
+                    ]
                 },
                 {
                     id: 'user_demo_2',
                     ip_address: '192.168.1.101',
                     created_at: new Date(Date.now() - 600000).toISOString(),
                     last_activity: new Date(Date.now() - 120000).toISOString(),
-                    hasPendingAI: false
+                    hasPendingAI: false,
+                    messages: [
+                        { text: "Как работает ваш ИИ?", sender: 'user', time: Date.now() - 300000 },
+                        { text: "Наш ИИ использует передовые технологии машинного обучения", sender: 'ai', time: Date.now() - 270000, isAI: true }
+                    ]
                 },
                 {
                     id: 'user_demo_3',
                     ip_address: '192.168.1.102',
                     created_at: new Date(Date.now() - 900000).toISOString(),
                     last_activity: new Date(Date.now() - 300000).toISOString(),
-                    hasPendingAI: true
+                    hasPendingAI: true,
+                    messages: [
+                        { text: "Мне нужна помощь с настройкой", sender: 'user', time: Date.now() - 480000 },
+                        { text: "Конечно, помогу вам с настройкой. Что именно не получается?", sender: 'ai', time: Date.now() - 450000, isAI: true }
+                    ]
                 }
             ];
             updateDebugInfo(`Загружено демо-сессий: ${userSessions.length}`);
@@ -1125,21 +1112,34 @@
                 displayMessage(messageText, 'user', Date.now());
                 elements.messageInput.value = '';
                 
-                // Показываем индикатор "печатает"
-                showTypingIndicator();
-                
-                // Имитация ответа AI
-                setTimeout(() => {
-                    hideTypingIndicator();
-                    const aiResponse = generateAIResponse(messageText);
-                    displayMessage(aiResponse, 'ai', Date.now());
+                if (isAIEnabled) {
+                    // Если ИИ включен - сразу отвечаем
+                    showTypingIndicator();
                     
-                    // Если админ, добавляем в список ожидающих
-                    if (isAdmin && userSessions.length > 0) {
-                        userSessions[0].hasPendingAI = true;
+                    setTimeout(() => {
+                        hideTypingIndicator();
+                        const aiResponse = generateAIResponse(messageText);
+                        displayAIResponse(aiResponse, Date.now());
+                    }, 2000);
+                } else {
+                    // Если ИИ выключен - показываем "Генерирую..." пока админ не ответит
+                    showTypingIndicator();
+                    
+                    // Добавляем сообщение в очередь ожидающих
+                    pendingMessages.push({
+                        sessionId: currentSessionId,
+                        text: messageText,
+                        timestamp: Date.now()
+                    });
+                    
+                    // Помечаем сессию как ожидающую ответа
+                    if (isAdmin) {
+                        const session = userSessions.find(s => s.id === currentSessionId);
+                        if (session) {
+                            session.hasPendingAI = true;
+                        }
                     }
-                    
-                }, 2000);
+                }
                 
                 showNotification('Сообщение отправлено!');
                 
@@ -1187,7 +1187,7 @@
             }
         }
 
-        // Отправка сообщения админом
+        // Отправка сообщения админом как Parallax AI
         async function sendAdminMessage() {
             const messageText = elements.adminMessageInput.value.trim();
             if (messageText === '' || !selectedSessionId) {
@@ -1196,9 +1196,12 @@
             }
 
             try {
-                // Локальное отображение сообщения
+                // Скрываем индикатор "Генерирую..."
+                hideTypingIndicator();
+                
+                // Отображаем сообщение как ответ от Parallax AI
                 if (selectedSessionId === currentSessionId) {
-                    displayMessage(messageText, 'admin', Date.now(), true);
+                    displayAIResponse(messageText, Date.now());
                 }
                 
                 elements.adminMessageInput.value = '';
@@ -1209,7 +1212,10 @@
                     session.hasPendingAI = false;
                 }
                 
-                showNotification('Сообщение отправлено пользователю');
+                // Убираем сообщение из очереди ожидающих
+                pendingMessages = pendingMessages.filter(msg => msg.sessionId !== selectedSessionId);
+                
+                showNotification('Ответ отправлен от имени Parallax AI');
                 
             } catch (error) {
                 console.error('Ошибка отправки админа:', error);
@@ -1224,11 +1230,11 @@
             if (isAIEnabled) {
                 elements.enableAIBtn.innerHTML = '<i class="fas fa-robot"></i> AI Enabled';
                 elements.enableAIBtn.classList.add('ai-enabled');
-                showNotification('Режим ИИ включен');
+                showNotification('Режим ИИ включен - автоматические ответы активированы');
             } else {
                 elements.enableAIBtn.innerHTML = '<i class="fas fa-robot"></i> Enable AI';
                 elements.enableAIBtn.classList.remove('ai-enabled');
-                showNotification('Режим ИИ выключен');
+                showNotification('Режим ИИ выключен - ответы требуют ручного ввода');
             }
         }
 
@@ -1243,8 +1249,8 @@
             elements.typingIndicator.style.display = 'none';
         }
 
-        // Отображение сообщения
-        function displayMessage(text, sender, timestamp, isAdminMessage = false) {
+        // Отображение сообщения пользователя
+        function displayMessage(text, sender, timestamp) {
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message');
             
@@ -1252,9 +1258,6 @@
                 messageDiv.classList.add('user-message');
             } else {
                 messageDiv.classList.add('ai-message');
-                if (isAdminMessage) {
-                    messageDiv.classList.add('admin-message');
-                }
             }
             
             const messageContent = document.createElement('div');
@@ -1265,12 +1268,25 @@
             timeDiv.classList.add('message-time');
             timeDiv.textContent = new Date(timestamp).toLocaleTimeString();
             
-            if (isAdminMessage) {
-                const senderDiv = document.createElement('div');
-                senderDiv.classList.add('message-sender');
-                senderDiv.innerHTML = 'Администратор <span class="admin-badge">ADMIN</span>';
-                messageDiv.appendChild(senderDiv);
-            }
+            messageDiv.appendChild(messageContent);
+            messageDiv.appendChild(timeDiv);
+            elements.chatContainer.appendChild(messageDiv);
+            elements.chatContainer.scrollTop = elements.chatContainer.scrollHeight;
+        }
+
+        // Отображение ответа от Parallax AI
+        function displayAIResponse(text, timestamp) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', 'ai-response-message');
+            
+            const messageContent = document.createElement('div');
+            messageContent.classList.add('message-content');
+            messageContent.textContent = text;
+            messageContent.style.marginTop = '15px';
+            
+            const timeDiv = document.createElement('div');
+            timeDiv.classList.add('message-time');
+            timeDiv.textContent = new Date(timestamp).toLocaleTimeString();
             
             messageDiv.appendChild(messageContent);
             messageDiv.appendChild(timeDiv);
@@ -1294,27 +1310,22 @@
             elements.chatContainer.innerHTML = '';
             elements.adminInputContainer.style.display = 'none';
             selectedSessionId = null;
+            hideTypingIndicator();
         }
 
-        // Демо-чат
-        function startDemoChat() {
-            activateChat();
-            setTimeout(() => {
-                displayMessage("Привет! Я Parallax AI. Готов помочь вам с любыми вопросами. Не стесняйтесь спрашивать!", 'ai', Date.now());
-            }, 500);
-        }
-
-        // Показать возможности
-        function showFeatures() {
-            const features = [
-                "💬 Умный диалог с искусственным интеллектом",
-                "👨‍💼 Панель администратора для управления пользователями",
-                "⚡ Мгновенные ответы в реальном времени",
-                "🎨 Красивый и современный интерфейс",
-                "🔒 Безопасное общение"
-            ];
-            
-            showNotification(features.join(' • '), 'success');
+        // Загрузка истории чата пользователя
+        function loadUserChat(sessionId) {
+            const session = userSessions.find(s => s.id === sessionId);
+            if (session && session.messages) {
+                elements.chatContainer.innerHTML = '';
+                session.messages.forEach(msg => {
+                    if (msg.isAI) {
+                        displayAIResponse(msg.text, msg.time);
+                    } else {
+                        displayMessage(msg.text, msg.sender, msg.time);
+                    }
+                });
+            }
         }
 
         // Инициализация приложения
@@ -1363,11 +1374,8 @@
                 currentSessionId = selectedSessionId;
                 activateChat();
                 
-                // Показываем историю сообщений
-                elements.chatContainer.innerHTML = '';
-                displayMessage("Вы вошли в чат пользователя", 'ai', Date.now());
-                displayMessage("Привет! У меня есть вопрос по поводу...", 'user', Date.now() - 60000);
-                displayMessage("Конечно, я помогу вам! Расскажите подробнее о вашей проблеме.", 'ai', Date.now() - 30000);
+                // Загружаем историю сообщений пользователя
+                loadUserChat(selectedSessionId);
                 
                 showNotification('Чат пользователя загружен');
             } else {
@@ -1383,10 +1391,6 @@
 
         // Запуск приложения
         window.onload = init;
-
-        // Глобальные функции для кнопок
-        window.startDemoChat = startDemoChat;
-        window.showFeatures = showFeatures;
     </script>
 </body>
 </html>
